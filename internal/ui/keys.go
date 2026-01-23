@@ -1,0 +1,144 @@
+package ui
+
+import "github.com/charmbracelet/bubbles/key"
+
+type KeyMap struct {
+	Up         key.Binding
+	Down       key.Binding
+	Left       key.Binding
+	Right      key.Binding
+	Top        key.Binding
+	Bottom     key.Binding
+	HalfUp     key.Binding
+	HalfDown   key.Binding
+	MoveLeft   key.Binding
+	MoveRight  key.Binding
+	New        key.Binding
+	Edit       key.Binding
+	Delete     key.Binding
+	ToggleDone key.Binding
+	Enter      key.Binding
+	Escape     key.Binding
+	Settings   key.Binding
+	Help       key.Binding
+	Quit       key.Binding
+	Search     key.Binding
+	Filter     key.Binding
+	Refresh    key.Binding
+	OpenEditor key.Binding
+	Tag        key.Binding
+}
+
+var DefaultKeyMap = KeyMap{
+	Up: key.NewBinding(
+		key.WithKeys("k", "up"),
+		key.WithHelp("k/↑", "up"),
+	),
+	Down: key.NewBinding(
+		key.WithKeys("j", "down"),
+		key.WithHelp("j/↓", "down"),
+	),
+	Left: key.NewBinding(
+		key.WithKeys("h", "left"),
+		key.WithHelp("h/←", "left lane"),
+	),
+	Right: key.NewBinding(
+		key.WithKeys("l", "right"),
+		key.WithHelp("l/→", "right lane"),
+	),
+	Top: key.NewBinding(
+		key.WithKeys("g"),
+		key.WithHelp("gg", "top"),
+	),
+	Bottom: key.NewBinding(
+		key.WithKeys("G"),
+		key.WithHelp("G", "bottom"),
+	),
+	HalfUp: key.NewBinding(
+		key.WithKeys("ctrl+u"),
+		key.WithHelp("ctrl+u", "half page up"),
+	),
+	HalfDown: key.NewBinding(
+		key.WithKeys("ctrl+f"),
+		key.WithHelp("ctrl+f", "half page down"),
+	),
+	MoveLeft: key.NewBinding(
+		key.WithKeys("H", "ctrl+left", "ctrl+h"),
+		key.WithHelp("H/ctrl+h", "move task left"),
+	),
+	MoveRight: key.NewBinding(
+		key.WithKeys("L", "ctrl+right", "ctrl+l"),
+		key.WithHelp("L/ctrl+l", "move task right"),
+	),
+	New: key.NewBinding(
+		key.WithKeys("a"),
+		key.WithHelp("a", "new task"),
+	),
+	Edit: key.NewBinding(
+		key.WithKeys("e", "i"),
+		key.WithHelp("e/i", "edit task"),
+	),
+	Delete: key.NewBinding(
+		key.WithKeys("ctrl+d", "x"),
+		key.WithHelp("ctrl+d/x", "delete task"),
+	),
+	ToggleDone: key.NewBinding(
+		key.WithKeys("d"),
+		key.WithHelp("d", "toggle done"),
+	),
+	Enter: key.NewBinding(
+		key.WithKeys("enter"),
+		key.WithHelp("enter", "confirm"),
+	),
+	Escape: key.NewBinding(
+		key.WithKeys("esc"),
+		key.WithHelp("esc", "cancel"),
+	),
+	Settings: key.NewBinding(
+		key.WithKeys(":"),
+		key.WithHelp(":", "command mode"),
+	),
+	Help: key.NewBinding(
+		key.WithKeys("?"),
+		key.WithHelp("?", "help"),
+	),
+	Quit: key.NewBinding(
+		key.WithKeys("q", "ctrl+c"),
+		key.WithHelp("q", "quit"),
+	),
+	Search: key.NewBinding(
+		key.WithKeys("/"),
+		key.WithHelp("/", "search"),
+	),
+	Filter: key.NewBinding(
+		key.WithKeys("f"),
+		key.WithHelp("f", "filter by tag"),
+	),
+	Refresh: key.NewBinding(
+		key.WithKeys("r", "ctrl+r"),
+		key.WithHelp("r", "refresh"),
+	),
+	OpenEditor: key.NewBinding(
+		key.WithKeys("ctrl+g"),
+		key.WithHelp("ctrl+g", "open in editor"),
+	),
+	Tag: key.NewBinding(
+		key.WithKeys("t"),
+		key.WithHelp("t", "add tag"),
+	),
+}
+
+func (k KeyMap) ShortHelp() []key.Binding {
+	return []key.Binding{k.Up, k.Down, k.Left, k.Right, k.New, k.ToggleDone, k.Help, k.Quit}
+}
+
+func (k KeyMap) FullHelp() [][]key.Binding {
+	return [][]key.Binding{
+		{k.Up, k.Down, k.Left, k.Right},
+		{k.Top, k.Bottom, k.HalfUp, k.HalfDown},
+		{k.MoveLeft, k.MoveRight},
+		{k.New, k.Edit, k.ToggleDone, k.Delete},
+		{k.Tag, k.Search, k.Filter, k.Refresh},
+		{k.Settings, k.Help, k.Quit},
+	}
+}
