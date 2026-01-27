@@ -1,6 +1,9 @@
 package task
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 type Status string
 
@@ -31,14 +34,34 @@ type Board struct {
 }
 
 func NewBoard() *Board {
+	return NewBoardWithHiddenColumns(nil)
+}
+
+func NewBoardWithHiddenColumns(hiddenColumns []string) *Board {
+	var visibleLanes []Status
+	for _, lane := range DefaultLanes {
+		if !isColumnHidden(string(lane), hiddenColumns) {
+			visibleLanes = append(visibleLanes, lane)
+		}
+	}
+
 	b := &Board{
 		Tasks: make(map[Status][]*Task),
-		Lanes: DefaultLanes,
+		Lanes: visibleLanes,
 	}
-	for _, lane := range b.Lanes {
+	for _, lane := range DefaultLanes {
 		b.Tasks[lane] = []*Task{}
 	}
 	return b
+}
+
+func isColumnHidden(column string, hiddenColumns []string) bool {
+	for _, hidden := range hiddenColumns {
+		if strings.EqualFold(hidden, column) {
+			return true
+		}
+	}
+	return false
 }
 
 func (b *Board) AddTask(t *Task) {

@@ -27,6 +27,7 @@ const (
 	ModeSettings
 	ModeView
 	ModeTag
+	ModeSearch
 )
 
 type Model struct {
@@ -48,6 +49,7 @@ type Model struct {
 	err            error
 	tagSuggestions []string
 	tagSuggestion  string
+	searchFilter   string
 }
 
 type tasksLoadedMsg struct {
@@ -66,6 +68,8 @@ type editorFinishedMsg struct {
 	filePath string
 }
 
+type configEditorFinishedMsg struct{}
+
 func NewModel(cfg *config.Config) Model {
 	ti := textinput.New()
 	ti.Placeholder = "Enter text..."
@@ -79,7 +83,7 @@ func NewModel(cfg *config.Config) Model {
 	mdRenderer := markdown.NewRenderer(mdStyles)
 
 	return Model{
-		board:      task.NewBoard(),
+		board:      task.NewBoardWithHiddenColumns(cfg.HiddenColumns),
 		config:     cfg,
 		keys:       DefaultKeyMap,
 		help:       h,
@@ -115,7 +119,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tasksLoadedMsg:
-		m.board = task.NewBoard()
+		m.board = task.NewBoardWithHiddenColumns(m.config.HiddenColumns)
 		for _, t := range msg.tasks {
 			m.board.AddTask(t)
 		}
@@ -132,6 +136,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case editorFinishedMsg:
 		return m, m.loadTasks
+
+	case configEditorFinishedMsg:
+		return m.reloadConfig()
 	}
 
 	return m, nil
@@ -161,6 +168,10 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleTagMode(msg)
 	}
 
+	if m.mode == ModeSearch {
+		return m.handleSearchMode(msg)
+	}
+
 	return m.handleNormalMode(msg)
 }
 
@@ -168,6 +179,13 @@ func (m Model) handleNormalMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case key.Matches(msg, m.keys.Quit):
 		return m, tea.Quit
+
+	case key.Matches(msg, m.keys.Escape):
+		if m.searchFilter != "" {
+			m.searchFilter = ""
+			m.clampSelection()
+			return m, nil
+		}
 
 	case key.Matches(msg, m.keys.Help):
 		m.mode = ModeHelp
@@ -278,8 +296,17 @@ func (m Model) handleNormalMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case key.Matches(msg, m.keys.Settings):
 		m.mode = ModeCommand
+		m.inputAction = ""
 		m.textInput.Reset()
 		m.textInput.Placeholder = "command..."
+		m.textInput.Focus()
+		m.gPressed = false
+		return m, textinput.Blink
+
+	case key.Matches(msg, m.keys.Search):
+		m.mode = ModeSearch
+		m.textInput.Reset()
+		m.textInput.Placeholder = "search..."
 		m.textInput.Focus()
 		m.gPressed = false
 		return m, textinput.Blink
@@ -466,6 +493,51 @@ func (m Model) handleTagMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+func (m Model) handleSearchMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch {
+	case key.Matches(msg, m.keys.Escape):
+		m.mode = ModeNormal
+		m.searchFilter = ""
+		m.textInput.Reset()
+		m.clampSelection()
+		return m, nil
+
+	case key.Matches(msg, m.keys.Enter):
+		m.mode = ModeNormal
+		m.searchFilter = strings.TrimSpace(m.textInput.Value())
+		m.activeTask = 0
+		m.clampSelection()
+		return m, nil
+	}
+
+	var cmd tea.Cmd
+	m.textInput, cmd = m.textInput.Update(msg)
+	m.searchFilter = m.textInput.Value()
+	m.activeTask = 0
+	m.clampSelection()
+	return m, cmd
+}
+
+func (m Model) filterTasks(tasks []*task.Task) []*task.Task {
+	if m.searchFilter == "" {
+		return tasks
+	}
+	filter := strings.ToLower(m.searchFilter)
+	var filtered []*task.Task
+	for _, t := range tasks {
+		if strings.Contains(strings.ToLower(t.Title), filter) {
+			filtered = append(filtered, t)
+		}
+		for _, tag := range t.Tags {
+			if strings.Contains(strings.ToLower(tag), filter) {
+				filtered = append(filtered, t)
+				break
+			}
+		}
+	}
+	return filtered
+}
+
 func (m Model) collectAllTags() []string {
 	tagSet := make(map[string]bool)
 	for _, lane := range m.board.Lanes {
@@ -555,6 +627,10 @@ func (m Model) handleCommand(cmd string) (tea.Model, tea.Cmd) {
 		m.help.ShowAll = true
 		return m, nil
 
+	case "config", "conf", "c":
+		m.mode = ModeNormal
+		return m, m.openConfigInEditor()
+
 	default:
 		m.message = "Unknown command: " + parts[0]
 	}
@@ -634,6 +710,34 @@ func (m Model) openInEditor(filePath string) tea.Cmd {
 	})
 }
 
+func (m Model) openConfigInEditor() tea.Cmd {
+	editor := os.Getenv("EDITOR")
+	if editor == "" {
+		editor = "nvim"
+	}
+
+	c := exec.Command(editor, m.config.ConfigPath)
+	return tea.ExecProcess(c, func(err error) tea.Msg {
+		return configEditorFinishedMsg{}
+	})
+}
+
+func (m Model) reloadConfig() (tea.Model, tea.Cmd) {
+	newConfig, err := config.Load()
+	if err != nil {
+		m.message = "Error reloading config: " + err.Error()
+		return m, nil
+	}
+	m.config = newConfig
+	m.message = "Config reloaded"
+
+	m.board = task.NewBoardWithHiddenColumns(m.config.HiddenColumns)
+	m.activeLane = 0
+	m.activeTask = 0
+
+	return m, m.loadTasks
+}
+
 func (m Model) moveTaskLeft() (tea.Model, tea.Cmd) {
 	t := m.selectedTask()
 	if t == nil || m.activeLane == 0 {
@@ -706,7 +810,7 @@ func (m Model) selectedTask() *task.Task {
 		return nil
 	}
 	lane := m.board.Lanes[m.activeLane]
-	tasks := m.board.Tasks[lane]
+	tasks := m.filterTasks(m.board.Tasks[lane])
 	if m.activeTask < 0 || m.activeTask >= len(tasks) {
 		return nil
 	}
@@ -722,7 +826,7 @@ func (m *Model) clampSelection() {
 	}
 
 	lane := m.board.Lanes[m.activeLane]
-	tasks := m.board.Tasks[lane]
+	tasks := m.filterTasks(m.board.Tasks[lane])
 
 	if m.activeTask < 0 {
 		m.activeTask = 0
@@ -766,6 +870,8 @@ func (m Model) renderHeader() string {
 		modeStr = "[VIEW]"
 	case ModeTag:
 		modeStr = "[TAG]"
+	case ModeSearch:
+		modeStr = "[SEARCH]"
 	default:
 		modeStr = "[NORMAL]"
 	}
@@ -806,7 +912,8 @@ func (m Model) renderBoard() string {
 
 func (m Model) renderLane(index int, status task.Status, width int) string {
 	isActive := index == m.activeLane
-	tasks := m.board.Tasks[status]
+	allTasks := m.board.Tasks[status]
+	tasks := m.filterTasks(allTasks)
 
 	headerStyle := InactiveLaneHeaderStyle
 	laneStyle := LaneStyle
@@ -907,11 +1014,23 @@ func (m Model) renderFooter() string {
 		return input
 	}
 
+	if m.mode == ModeSearch {
+		input := InputStyle.Render("/" + m.textInput.View())
+		return input
+	}
+
 	if m.mode == ModeConfirm {
 		return DialogStyle.Render("Delete task? (y/n)")
 	}
 
 	var parts []string
+
+	if m.searchFilter != "" {
+		filterMsg := lipgloss.NewStyle().
+			Foreground(HighlightColor).
+			Render("Filter: /" + m.searchFilter + "  (ESC to clear)")
+		parts = append(parts, filterMsg)
+	}
 
 	if m.message != "" {
 		parts = append(parts, StatusBarStyle.Foreground(WarningColor).Render(m.message))

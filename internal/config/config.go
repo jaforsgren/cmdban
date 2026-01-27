@@ -15,6 +15,7 @@ const (
 type Config struct {
 	TaskDirectory string
 	ConfigPath    string
+	HiddenColumns []string
 }
 
 func DefaultConfigPath() string {
@@ -30,6 +31,7 @@ func Load() (*Config, error) {
 	cfg := &Config{
 		TaskDirectory: DefaultTaskDir,
 		ConfigPath:    configPath,
+		HiddenColumns: []string{},
 	}
 
 	file, err := os.Open(configPath)
@@ -47,9 +49,30 @@ func Load() (*Config, error) {
 		if strings.HasPrefix(line, "task_directory:") {
 			cfg.TaskDirectory = strings.TrimSpace(strings.TrimPrefix(line, "task_directory:"))
 		}
+		if strings.HasPrefix(line, "hidden_columns:") {
+			value := strings.TrimSpace(strings.TrimPrefix(line, "hidden_columns:"))
+			if value != "" {
+				columns := strings.Split(value, ",")
+				for _, col := range columns {
+					col = strings.TrimSpace(col)
+					if col != "" {
+						cfg.HiddenColumns = append(cfg.HiddenColumns, col)
+					}
+				}
+			}
+		}
 	}
 
 	return cfg, scanner.Err()
+}
+
+func (c *Config) IsColumnHidden(column string) bool {
+	for _, hidden := range c.HiddenColumns {
+		if strings.EqualFold(hidden, column) {
+			return true
+		}
+	}
+	return false
 }
 
 func (c *Config) Save() error {
@@ -57,6 +80,9 @@ func (c *Config) Save() error {
 	sb.WriteString("# Kanban TUI Configuration\n\n")
 	sb.WriteString("task_directory: ")
 	sb.WriteString(c.TaskDirectory)
+	sb.WriteString("\n")
+	sb.WriteString("hidden_columns: ")
+	sb.WriteString(strings.Join(c.HiddenColumns, ", "))
 	sb.WriteString("\n")
 
 	return os.WriteFile(c.ConfigPath, []byte(sb.String()), 0644)
