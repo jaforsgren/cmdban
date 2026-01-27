@@ -23,6 +23,7 @@ type Task struct {
 	Status      Status
 	Tags        []string
 	Priority    int
+	Marked      bool
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
 	FilePath    string

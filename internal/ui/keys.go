@@ -17,6 +17,7 @@ type KeyMap struct {
 	Edit       key.Binding
 	Delete     key.Binding
 	ToggleDone key.Binding
+	Mark       key.Binding
 	Enter      key.Binding
 	Escape     key.Binding
 	Settings   key.Binding
@@ -86,6 +87,10 @@ var DefaultKeyMap = KeyMap{
 		key.WithKeys("d"),
 		key.WithHelp("d", "toggle done"),
 	),
+	Mark: key.NewBinding(
+		key.WithKeys("m"),
+		key.WithHelp("m", "mark task"),
+	),
 	Enter: key.NewBinding(
 		key.WithKeys("enter"),
 		key.WithHelp("enter", "confirm"),
@@ -138,7 +143,7 @@ func (k KeyMap) FullHelp() [][]key.Binding {
 		{k.Top, k.Bottom, k.HalfUp, k.HalfDown},
 		{k.MoveLeft, k.MoveRight},
 		{k.New, k.Edit, k.ToggleDone, k.Delete},
-		{k.Tag, k.Search, k.Filter, k.Refresh},
+		{k.Mark, k.Tag, k.Search, k.Filter, k.Refresh},
 		{k.Settings, k.Help, k.Quit},
 	}
 }

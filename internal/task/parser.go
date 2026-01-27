@@ -14,6 +14,7 @@ var (
 	plainTagRegex = regexp.MustCompile(`@([\w][-\w]*)(?:\s|$)`)
 	statusRegex   = regexp.MustCompile(`@status:([\w][-\w]*)`)
 	priorityRegex = regexp.MustCompile(`@priority:(\d+)`)
+	markedRegex   = regexp.MustCompile(`@marked`)
 )
 
 func ParseMarkdownFile(path string) (*Task, error) {
@@ -76,10 +77,14 @@ func parseFooter(task *Task, footer string) {
 		fmt.Sscanf(matches[1], "%d", &task.Priority)
 	}
 
+	task.Marked = markedRegex.MatchString(footer)
+
 	tags := plainTagRegex.FindAllStringSubmatch(footer, -1)
 	for _, match := range tags {
 		tag := match[1]
-		task.Tags = append(task.Tags, tag)
+		if tag != "marked" {
+			task.Tags = append(task.Tags, tag)
+		}
 	}
 }
 
@@ -100,6 +105,10 @@ func WriteMarkdownFile(task *Task) error {
 
 	if task.Priority > 0 {
 		sb.WriteString(fmt.Sprintf(" @priority:%d", task.Priority))
+	}
+
+	if task.Marked {
+		sb.WriteString(" @marked")
 	}
 
 	for _, tag := range task.Tags {

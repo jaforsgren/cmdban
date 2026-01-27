@@ -294,6 +294,9 @@ func (m Model) handleNormalMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, textinput.Blink
 		}
 
+	case key.Matches(msg, m.keys.Mark):
+		return m.toggleMark()
+
 	case key.Matches(msg, m.keys.Settings):
 		m.mode = ModeCommand
 		m.inputAction = ""
@@ -805,6 +808,22 @@ func (m Model) toggleTaskDone() (tea.Model, tea.Cmd) {
 	}
 }
 
+func (m Model) toggleMark() (tea.Model, tea.Cmd) {
+	t := m.selectedTask()
+	if t == nil {
+		return m, nil
+	}
+
+	t.Marked = !t.Marked
+
+	return m, func() tea.Msg {
+		if err := task.WriteMarkdownFile(t); err != nil {
+			return errMsg{err}
+		}
+		return taskSavedMsg{t}
+	}
+}
+
 func (m Model) selectedTask() *task.Task {
 	if m.activeLane < 0 || m.activeLane >= len(m.board.Lanes) {
 		return nil
@@ -965,15 +984,24 @@ func (m Model) renderTask(t *task.Task, selected bool, width int) string {
 	switch {
 	case selected && isDone:
 		style = SelectedDoneTaskStyle
+	case selected && t.Marked:
+		style = SelectedTaskStyle.Foreground(lipgloss.Color("#AAAAAA"))
 	case selected:
 		style = SelectedTaskStyle
 	case isDone:
 		style = DoneTaskStyle
+	case t.Marked:
+		style = TaskStyle.Foreground(SubtleColor)
 	default:
 		style = TaskStyle
 	}
 
-	title := t.Title
+	prefix := ""
+	if t.Marked {
+		prefix = "✓ "
+	}
+
+	title := prefix + t.Title
 	if len(title) > width-2 {
 		title = title[:width-5] + "..."
 	}
@@ -1119,9 +1147,10 @@ func (m Model) renderHelp() string {
   j/↓      down                 d       toggle done
   k/↑      up                   ctrl+d  delete task
   gg       top of lane          t       add tag
-  G        bottom of lane       H       move task left
-  ctrl+u   half page up         L       move task right
-  ctrl+f   half page down       enter   view task
+  G        bottom of lane       m       mark task
+  ctrl+u   half page up         H       move task left
+  ctrl+f   half page down       L       move task right
+                                enter   view task
 
   MISC                          COMMANDS
   ────                          ────────
