@@ -83,7 +83,7 @@ func NewModel(cfg *config.Config) Model {
 	mdRenderer := markdown.NewRenderer(mdStyles)
 
 	return Model{
-		board:      task.NewBoardWithHiddenColumns(cfg.HiddenColumns),
+		board:      task.NewBoardWithColumns(cfg.AllColumns(), cfg.HiddenColumns()),
 		config:     cfg,
 		keys:       DefaultKeyMap,
 		help:       h,
@@ -100,7 +100,7 @@ func (m Model) Init() tea.Cmd {
 }
 
 func (m Model) loadTasks() tea.Msg {
-	tasks, err := task.LoadTasksFromDirectory(m.config.TaskDirectory)
+	tasks, err := task.LoadTasksFromDirectory(m.config.TaskDirectory())
 	if err != nil {
 		return errMsg{err}
 	}
@@ -119,7 +119,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tasksLoadedMsg:
-		m.board = task.NewBoardWithHiddenColumns(m.config.HiddenColumns)
+		m.board = task.NewBoardWithColumns(m.config.AllColumns(), m.config.HiddenColumns())
 		for _, t := range msg.tasks {
 			m.board.AddTask(t)
 		}
@@ -605,7 +605,9 @@ func (m Model) handleCommand(cmd string) (tea.Model, tea.Cmd) {
 	switch parts[0] {
 	case "settings", "set", "s":
 		if len(parts) > 1 && parts[1] == "dir" && len(parts) > 2 {
-			m.config.TaskDirectory = parts[2]
+			if board := m.config.ActiveBoard(); board != nil {
+				board.Directory = parts[2]
+			}
 			if err := m.config.Save(); err != nil {
 				m.message = "Error saving config: " + err.Error()
 			} else {
@@ -643,7 +645,9 @@ func (m Model) handleCommand(cmd string) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleSettingsCommand(value string) (tea.Model, tea.Cmd) {
-	m.config.TaskDirectory = value
+	if board := m.config.ActiveBoard(); board != nil {
+		board.Directory = value
+	}
 	if err := m.config.Save(); err != nil {
 		m.message = "Error saving config: " + err.Error()
 	} else {
@@ -658,7 +662,7 @@ func (m Model) createTask(title string) (tea.Model, tea.Cmd) {
 	lane := m.board.Lanes[m.activeLane]
 
 	return m, func() tea.Msg {
-		t, err := task.CreateNewTask(m.config.TaskDirectory, title)
+		t, err := task.CreateNewTask(m.config.TaskDirectory(), title)
 		if err != nil {
 			return errMsg{err}
 		}
@@ -719,7 +723,7 @@ func (m Model) openConfigInEditor() tea.Cmd {
 		editor = "nvim"
 	}
 
-	c := exec.Command(editor, m.config.ConfigPath)
+	c := exec.Command(editor, m.config.ConfigPath())
 	return tea.ExecProcess(c, func(err error) tea.Msg {
 		return configEditorFinishedMsg{}
 	})
@@ -734,7 +738,7 @@ func (m Model) reloadConfig() (tea.Model, tea.Cmd) {
 	m.config = newConfig
 	m.message = "Config reloaded"
 
-	m.board = task.NewBoardWithHiddenColumns(m.config.HiddenColumns)
+	m.board = task.NewBoardWithColumns(m.config.AllColumns(), m.config.HiddenColumns())
 	m.activeLane = 0
 	m.activeTask = 0
 
@@ -900,7 +904,7 @@ func (m Model) renderHeader() string {
 		Bold(true).
 		Render(modeStr)
 
-	dir := StatusBarStyle.Render("📁 " + m.config.TaskDirectory)
+	dir := StatusBarStyle.Render("📁 " + m.config.TaskDirectory())
 
 	header := lipgloss.JoinHorizontal(lipgloss.Center, title, "  ", mode, "  ", dir)
 	return header
