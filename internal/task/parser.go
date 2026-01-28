@@ -149,8 +149,35 @@ func LoadTasksFromDirectory(dir string) ([]*Task, error) {
 	return tasks, nil
 }
 
+func sanitizeTitle(title string) string {
+	result := strings.ToLower(title)
+	result = strings.ReplaceAll(result, " ", "-")
+
+	sanitizeRegex := regexp.MustCompile(`[^a-z0-9-]`)
+	result = sanitizeRegex.ReplaceAllString(result, "")
+
+	multiHyphenRegex := regexp.MustCompile(`-+`)
+	result = multiHyphenRegex.ReplaceAllString(result, "-")
+
+	result = strings.Trim(result, "-")
+
+	return result
+}
+
+func generateShortID() string {
+	return fmt.Sprintf("%06x", time.Now().UnixNano()&0xFFFFFF)
+}
+
 func CreateNewTask(dir, title string) (*Task, error) {
-	id := fmt.Sprintf("%d.md", time.Now().UnixNano())
+	slug := sanitizeTitle(title)
+	shortID := generateShortID()
+
+	var id string
+	if slug == "" {
+		id = fmt.Sprintf("%s.md", shortID)
+	} else {
+		id = fmt.Sprintf("%s-%s.md", slug, shortID)
+	}
 	path := filepath.Join(dir, id)
 
 	task := &Task{

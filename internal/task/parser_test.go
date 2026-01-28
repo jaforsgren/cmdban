@@ -208,6 +208,68 @@ func TestDeleteTask(t *testing.T) {
 	}
 }
 
+func TestSanitizeTitle(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"Simple Title", "simple-title"},
+		{"Fix API: Rate Limiting", "fix-api-rate-limiting"},
+		{"Update the login flow!", "update-the-login-flow"},
+		{"Add feature #123", "add-feature-123"},
+		{"  spaces   everywhere  ", "spaces-everywhere"},
+		{"UPPERCASE TITLE", "uppercase-title"},
+		{"special@chars#here$now", "specialcharsherenow"},
+		{"multiple---hyphens", "multiple-hyphens"},
+		{"", ""},
+		{"!@#$%", ""},
+		{"123-numbers-456", "123-numbers-456"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.input, func(t *testing.T) {
+			result := sanitizeTitle(tc.input)
+			if result != tc.expected {
+				t.Errorf("sanitizeTitle(%q) = %q, expected %q", tc.input, result, tc.expected)
+			}
+		})
+	}
+}
+
+func TestCreateNewTaskFilename(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	task, err := CreateNewTask(tmpDir, "Fix the Bug")
+	if err != nil {
+		t.Fatalf("CreateNewTask failed: %v", err)
+	}
+
+	if !strings.HasPrefix(task.ID, "fix-the-bug-") {
+		t.Errorf("Expected ID to start with 'fix-the-bug-', got '%s'", task.ID)
+	}
+
+	if !strings.HasSuffix(task.ID, ".md") {
+		t.Errorf("Expected ID to end with '.md', got '%s'", task.ID)
+	}
+}
+
+func TestCreateNewTaskEmptySlug(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	task, err := CreateNewTask(tmpDir, "!@#$%")
+	if err != nil {
+		t.Fatalf("CreateNewTask failed: %v", err)
+	}
+
+	if strings.HasPrefix(task.ID, "-") {
+		t.Errorf("ID should not start with hyphen when slug is empty, got '%s'", task.ID)
+	}
+
+	if !strings.HasSuffix(task.ID, ".md") {
+		t.Errorf("Expected ID to end with '.md', got '%s'", task.ID)
+	}
+}
+
 func TestParseFooterVariations(t *testing.T) {
 	tests := []struct {
 		name           string
