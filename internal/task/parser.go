@@ -6,17 +6,19 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 )
 
 var (
-	plainTagRegex      = regexp.MustCompile(`@([\w][-\w]*)(?:\s|$)`)
-	statusRegex        = regexp.MustCompile(`@status:([\w][-\w]*)`)
-	priorityRegex      = regexp.MustCompile(`@priority:(\d+)`)
-	markedRegex        = regexp.MustCompile(`@marked`)
-	checkedBoxRegex    = regexp.MustCompile(`(?m)^- \[x\]`)
-	uncheckedBoxRegex  = regexp.MustCompile(`(?m)^- \[ \]`)
+	plainTagRegex     = regexp.MustCompile(`@([\w][-\w]*)(?:\s|$)`)
+	statusRegex       = regexp.MustCompile(`@status:([\w][-\w]*)`)
+	priorityRegex     = regexp.MustCompile(`@priority:(\d+)`)
+	orderRegex        = regexp.MustCompile(`@order:(\d+)`)
+	markedRegex       = regexp.MustCompile(`@marked`)
+	checkedBoxRegex   = regexp.MustCompile(`(?m)^- \[x\]`)
+	uncheckedBoxRegex = regexp.MustCompile(`(?m)^- \[ \]`)
 )
 
 func ParseMarkdownFile(path string) (*Task, error) {
@@ -81,6 +83,10 @@ func parseFooter(task *Task, footer string) {
 		fmt.Sscanf(matches[1], "%d", &task.Priority)
 	}
 
+	if matches := orderRegex.FindStringSubmatch(footer); len(matches) > 1 {
+		fmt.Sscanf(matches[1], "%d", &task.Order)
+	}
+
 	task.Marked = markedRegex.MatchString(footer)
 
 	tags := plainTagRegex.FindAllStringSubmatch(footer, -1)
@@ -109,6 +115,10 @@ func WriteMarkdownFile(task *Task) error {
 
 	if task.Priority > 0 {
 		sb.WriteString(fmt.Sprintf(" @priority:%d", task.Priority))
+	}
+
+	if task.Order > 0 {
+		sb.WriteString(fmt.Sprintf(" @order:%d", task.Order))
 	}
 
 	if task.Marked {
@@ -149,6 +159,20 @@ func LoadTasksFromDirectory(dir string) ([]*Task, error) {
 		}
 		tasks = append(tasks, task)
 	}
+
+	sort.Slice(tasks, func(i, j int) bool {
+		oi, oj := tasks[i].Order, tasks[j].Order
+		if oi == 0 && oj == 0 {
+			return tasks[i].ID < tasks[j].ID
+		}
+		if oi == 0 {
+			return false
+		}
+		if oj == 0 {
+			return true
+		}
+		return oi < oj
+	})
 
 	return tasks, nil
 }

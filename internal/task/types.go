@@ -24,6 +24,7 @@ type Task struct {
 	Tags          []string
 	Priority      int
 	Marked        bool
+	Order         int
 	CheckboxDone  int
 	CheckboxTotal int
 	CreatedAt     time.Time

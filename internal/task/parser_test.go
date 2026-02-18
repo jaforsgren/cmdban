@@ -291,6 +291,47 @@ func TestCreateNewTaskEmptySlug(t *testing.T) {
 	}
 }
 
+func TestLoadTasksOrderSorting(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	files := []struct {
+		name    string
+		content string
+	}{
+		{"c_task.md", "# C Task\n\n---\n@status:backlog @order:3"},
+		{"a_task.md", "# A Task\n\n---\n@status:backlog @order:1"},
+		{"b_task.md", "# B Task\n\n---\n@status:backlog @order:2"},
+		{"z_unordered.md", "# Z Unordered\n\n---\n@status:backlog"},
+	}
+	for _, f := range files {
+		if err := os.WriteFile(filepath.Join(tmpDir, f.name), []byte(f.content), 0644); err != nil {
+			t.Fatalf("Failed to create test file: %v", err)
+		}
+	}
+
+	tasks, err := LoadTasksFromDirectory(tmpDir)
+	if err != nil {
+		t.Fatalf("LoadTasksFromDirectory failed: %v", err)
+	}
+
+	if len(tasks) != 4 {
+		t.Fatalf("Expected 4 tasks, got %d", len(tasks))
+	}
+
+	if tasks[0].Title != "A Task" {
+		t.Errorf("Expected first task 'A Task', got '%s'", tasks[0].Title)
+	}
+	if tasks[1].Title != "B Task" {
+		t.Errorf("Expected second task 'B Task', got '%s'", tasks[1].Title)
+	}
+	if tasks[2].Title != "C Task" {
+		t.Errorf("Expected third task 'C Task', got '%s'", tasks[2].Title)
+	}
+	if tasks[3].Title != "Z Unordered" {
+		t.Errorf("Expected unordered task last, got '%s'", tasks[3].Title)
+	}
+}
+
 func TestParseCheckboxes(t *testing.T) {
 	tmpDir := t.TempDir()
 	testFile := filepath.Join(tmpDir, "checkbox-task.md")

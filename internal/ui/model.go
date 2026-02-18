@@ -65,6 +65,8 @@ type errMsg struct {
 	err error
 }
 
+type taskOrderSavedMsg struct{}
+
 type editorFinishedMsg struct {
 	filePath string
 }
@@ -133,6 +135,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case errMsg:
 		m.err = msg.err
 		m.message = "Error: " + msg.err.Error()
+		return m, nil
+
+	case taskOrderSavedMsg:
 		return m, nil
 
 	case editorFinishedMsg:
@@ -252,6 +257,12 @@ func (m Model) handleNormalMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case key.Matches(msg, m.keys.MoveRight):
 		return m.moveTaskRight()
+
+	case key.Matches(msg, m.keys.OrderUp):
+		return m.reorderTask(-1)
+
+	case key.Matches(msg, m.keys.OrderDown):
+		return m.reorderTask(1)
 
 	case key.Matches(msg, m.keys.New):
 		m.mode = ModeInput
@@ -427,6 +438,12 @@ func (m Model) handleViewMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.MoveRight):
 		m.mode = ModeNormal
 		return m.moveTaskRight()
+
+	case key.Matches(msg, m.keys.OrderUp):
+		return m.reorderTask(-1)
+
+	case key.Matches(msg, m.keys.OrderDown):
+		return m.reorderTask(1)
 
 	case key.Matches(msg, m.keys.Edit):
 		t := m.selectedTask()
@@ -810,6 +827,53 @@ func (m Model) toggleTaskDone() (tea.Model, tea.Cmd) {
 			return errMsg{err}
 		}
 		return taskSavedMsg{t}
+	}
+}
+
+func (m Model) reorderTask(delta int) (tea.Model, tea.Cmd) {
+	t := m.selectedTask()
+	if t == nil {
+		return m, nil
+	}
+
+	lane := t.Status
+	tasks := m.board.Tasks[lane]
+
+	idx := -1
+	for i, task := range tasks {
+		if task.ID == t.ID {
+			idx = i
+			break
+		}
+	}
+
+	newIdx := idx + delta
+	if newIdx < 0 || newIdx >= len(tasks) {
+		return m, nil
+	}
+
+	tasks[idx], tasks[newIdx] = tasks[newIdx], tasks[idx]
+	m.board.Tasks[lane] = tasks
+
+	if m.searchFilter == "" {
+		m.activeTask = newIdx
+	}
+
+	return m, m.saveLaneOrder(lane)
+}
+
+func (m Model) saveLaneOrder(lane task.Status) tea.Cmd {
+	snapshot := make([]*task.Task, len(m.board.Tasks[lane]))
+	copy(snapshot, m.board.Tasks[lane])
+
+	return func() tea.Msg {
+		for i, t := range snapshot {
+			t.Order = i + 1
+			if err := task.WriteMarkdownFile(t); err != nil {
+				return errMsg{err}
+			}
+		}
+		return taskOrderSavedMsg{}
 	}
 }
 
