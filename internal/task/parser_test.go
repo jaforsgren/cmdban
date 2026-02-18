@@ -213,17 +213,17 @@ func TestSanitizeTitle(t *testing.T) {
 		input    string
 		expected string
 	}{
-		{"Simple Title", "simple-title"},
-		{"Fix API: Rate Limiting", "fix-api-rate-limiting"},
-		{"Update the login flow!", "update-the-login-flow"},
-		{"Add feature #123", "add-feature-123"},
-		{"  spaces   everywhere  ", "spaces-everywhere"},
-		{"UPPERCASE TITLE", "uppercase-title"},
+		{"Simple Title", "simple_title"},
+		{"Fix API: Rate Limiting", "fix_api_rate_limiting"},
+		{"Update the login flow!", "update_the_login_flow"},
+		{"Add feature #123", "add_feature_123"},
+		{"  spaces   everywhere  ", "spaces_everywhere"},
+		{"UPPERCASE TITLE", "uppercase_title"},
 		{"special@chars#here$now", "specialcharsherenow"},
-		{"multiple---hyphens", "multiple-hyphens"},
+		{"multiple___underscores", "multiple_underscores"},
 		{"", ""},
 		{"!@#$%", ""},
-		{"123-numbers-456", "123-numbers-456"},
+		{"123_numbers_456", "123_numbers_456"},
 	}
 
 	for _, tc := range tests {
@@ -239,34 +239,50 @@ func TestSanitizeTitle(t *testing.T) {
 func TestCreateNewTaskFilename(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	task, err := CreateNewTask(tmpDir, "Fix the Bug")
+	created, err := CreateNewTask(tmpDir, "Fix the Bug")
 	if err != nil {
 		t.Fatalf("CreateNewTask failed: %v", err)
 	}
 
-	if !strings.HasPrefix(task.ID, "fix-the-bug-") {
-		t.Errorf("Expected ID to start with 'fix-the-bug-', got '%s'", task.ID)
+	if created.ID != "fix_the_bug.md" {
+		t.Errorf("Expected ID 'fix_the_bug.md', got '%s'", created.ID)
+	}
+}
+
+func TestCreateNewTaskFilenameCollision(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	first, err := CreateNewTask(tmpDir, "Fix the Bug")
+	if err != nil {
+		t.Fatalf("CreateNewTask (first) failed: %v", err)
+	}
+	if first.ID != "fix_the_bug.md" {
+		t.Errorf("Expected first ID 'fix_the_bug.md', got '%s'", first.ID)
 	}
 
-	if !strings.HasSuffix(task.ID, ".md") {
-		t.Errorf("Expected ID to end with '.md', got '%s'", task.ID)
+	second, err := CreateNewTask(tmpDir, "Fix the Bug")
+	if err != nil {
+		t.Fatalf("CreateNewTask (second) failed: %v", err)
+	}
+	if second.ID != "fix_the_bug_2.md" {
+		t.Errorf("Expected second ID 'fix_the_bug_2.md', got '%s'", second.ID)
 	}
 }
 
 func TestCreateNewTaskEmptySlug(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	task, err := CreateNewTask(tmpDir, "!@#$%")
+	created, err := CreateNewTask(tmpDir, "!@#$%")
 	if err != nil {
 		t.Fatalf("CreateNewTask failed: %v", err)
 	}
 
-	if strings.HasPrefix(task.ID, "-") {
-		t.Errorf("ID should not start with hyphen when slug is empty, got '%s'", task.ID)
+	if strings.HasPrefix(created.ID, "_") {
+		t.Errorf("ID should not start with underscore when slug is empty, got '%s'", created.ID)
 	}
 
-	if !strings.HasSuffix(task.ID, ".md") {
-		t.Errorf("Expected ID to end with '.md', got '%s'", task.ID)
+	if !strings.HasSuffix(created.ID, ".md") {
+		t.Errorf("Expected ID to end with '.md', got '%s'", created.ID)
 	}
 }
 

@@ -151,15 +151,15 @@ func LoadTasksFromDirectory(dir string) ([]*Task, error) {
 
 func sanitizeTitle(title string) string {
 	result := strings.ToLower(title)
-	result = strings.ReplaceAll(result, " ", "-")
+	result = strings.ReplaceAll(result, " ", "_")
 
-	sanitizeRegex := regexp.MustCompile(`[^a-z0-9-]`)
+	sanitizeRegex := regexp.MustCompile(`[^a-z0-9_]`)
 	result = sanitizeRegex.ReplaceAllString(result, "")
 
-	multiHyphenRegex := regexp.MustCompile(`-+`)
-	result = multiHyphenRegex.ReplaceAllString(result, "-")
+	multiUnderscoreRegex := regexp.MustCompile(`_+`)
+	result = multiUnderscoreRegex.ReplaceAllString(result, "_")
 
-	result = strings.Trim(result, "-")
+	result = strings.Trim(result, "_")
 
 	return result
 }
@@ -168,20 +168,33 @@ func generateShortID() string {
 	return fmt.Sprintf("%06x", time.Now().UnixNano()&0xFFFFFF)
 }
 
+func uniqueFilename(dir, slug string) string {
+	candidate := filepath.Join(dir, slug+".md")
+	if _, err := os.Stat(candidate); os.IsNotExist(err) {
+		return slug + ".md"
+	}
+	for i := 2; ; i++ {
+		name := fmt.Sprintf("%s_%d.md", slug, i)
+		candidate = filepath.Join(dir, name)
+		if _, err := os.Stat(candidate); os.IsNotExist(err) {
+			return name
+		}
+	}
+}
+
 func CreateNewTask(dir, title string) (*Task, error) {
 	slug := sanitizeTitle(title)
-	shortID := generateShortID()
 
-	var id string
+	var filename string
 	if slug == "" {
-		id = fmt.Sprintf("%s.md", shortID)
+		filename = generateShortID() + ".md"
 	} else {
-		id = fmt.Sprintf("%s-%s.md", slug, shortID)
+		filename = uniqueFilename(dir, slug)
 	}
-	path := filepath.Join(dir, id)
+	path := filepath.Join(dir, filename)
 
-	task := &Task{
-		ID:        id,
+	t := &Task{
+		ID:        filename,
 		Title:     title,
 		Status:    StatusBacklog,
 		FilePath:  path,
@@ -189,11 +202,11 @@ func CreateNewTask(dir, title string) (*Task, error) {
 		UpdatedAt: time.Now(),
 	}
 
-	if err := WriteMarkdownFile(task); err != nil {
+	if err := WriteMarkdownFile(t); err != nil {
 		return nil, err
 	}
 
-	return task, nil
+	return t, nil
 }
 
 func DeleteTask(task *Task) error {
