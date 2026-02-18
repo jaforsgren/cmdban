@@ -702,7 +702,7 @@ func (m Model) deleteTask() (tea.Model, tea.Cmd) {
 		if err := task.ArchiveTask(t); err != nil {
 			return errMsg{err}
 		}
-		return tasksLoadedMsg{}
+		return taskSavedMsg{}
 	}
 }
 
