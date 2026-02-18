@@ -209,6 +209,13 @@ func CreateNewTask(dir, title string) (*Task, error) {
 	return t, nil
 }
 
-func DeleteTask(task *Task) error {
-	return os.Remove(task.FilePath)
+const archiveDirName = "_archive"
+
+func ArchiveTask(t *Task) error {
+	archiveDir := filepath.Join(filepath.Dir(t.FilePath), archiveDirName)
+	if err := os.MkdirAll(archiveDir, 0755); err != nil {
+		return err
+	}
+	dest := filepath.Join(archiveDir, filepath.Base(t.FilePath))
+	return os.Rename(t.FilePath, dest)
 }

@@ -187,24 +187,29 @@ func TestCreateNewTask(t *testing.T) {
 	}
 }
 
-func TestDeleteTask(t *testing.T) {
+func TestArchiveTask(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	task, err := CreateNewTask(tmpDir, "Task to Delete")
+	created, err := CreateNewTask(tmpDir, "Task to Archive")
 	if err != nil {
 		t.Fatalf("CreateNewTask failed: %v", err)
 	}
 
-	if _, err := os.Stat(task.FilePath); os.IsNotExist(err) {
-		t.Fatal("Task file should exist before deletion")
+	if _, err := os.Stat(created.FilePath); os.IsNotExist(err) {
+		t.Fatal("Task file should exist before archiving")
 	}
 
-	if err := DeleteTask(task); err != nil {
-		t.Fatalf("DeleteTask failed: %v", err)
+	if err := ArchiveTask(created); err != nil {
+		t.Fatalf("ArchiveTask failed: %v", err)
 	}
 
-	if _, err := os.Stat(task.FilePath); !os.IsNotExist(err) {
-		t.Error("Task file should not exist after deletion")
+	if _, err := os.Stat(created.FilePath); !os.IsNotExist(err) {
+		t.Error("Task file should not exist at original path after archiving")
+	}
+
+	archivePath := filepath.Join(tmpDir, archiveDirName, filepath.Base(created.FilePath))
+	if _, err := os.Stat(archivePath); os.IsNotExist(err) {
+		t.Error("Task file should exist in _archive directory")
 	}
 }
 
