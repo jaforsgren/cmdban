@@ -17,16 +17,18 @@ const (
 var DefaultLanes = []Status{StatusToday, StatusTomorrow, StatusBacklog, StatusDone}
 
 type Task struct {
-	ID          string
-	Title       string
-	Description string
-	Status      Status
-	Tags        []string
-	Priority    int
-	Marked      bool
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
-	FilePath    string
+	ID            string
+	Title         string
+	Description   string
+	Status        Status
+	Tags          []string
+	Priority      int
+	Marked        bool
+	CheckboxDone  int
+	CheckboxTotal int
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
+	FilePath      string
 }
 
 type Board struct {

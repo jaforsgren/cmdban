@@ -291,6 +291,57 @@ func TestCreateNewTaskEmptySlug(t *testing.T) {
 	}
 }
 
+func TestParseCheckboxes(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "checkbox-task.md")
+
+	content := `# Checkbox Task
+
+- [x] Done item one
+- [x] Done item two
+- [ ] Pending item
+- [ ] Another pending
+
+---
+@status:today
+`
+	if err := os.WriteFile(testFile, []byte(content), 0644); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+
+	task, err := ParseMarkdownFile(testFile)
+	if err != nil {
+		t.Fatalf("ParseMarkdownFile failed: %v", err)
+	}
+
+	if task.CheckboxTotal != 4 {
+		t.Errorf("Expected CheckboxTotal 4, got %d", task.CheckboxTotal)
+	}
+
+	if task.CheckboxDone != 2 {
+		t.Errorf("Expected CheckboxDone 2, got %d", task.CheckboxDone)
+	}
+}
+
+func TestParseCheckboxesNone(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "no-checkbox-task.md")
+
+	content := "# Simple Task\n\nJust some text.\n\n---\n@status:backlog\n"
+	if err := os.WriteFile(testFile, []byte(content), 0644); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+
+	task, err := ParseMarkdownFile(testFile)
+	if err != nil {
+		t.Fatalf("ParseMarkdownFile failed: %v", err)
+	}
+
+	if task.CheckboxTotal != 0 {
+		t.Errorf("Expected CheckboxTotal 0, got %d", task.CheckboxTotal)
+	}
+}
+
 func TestParseFooterVariations(t *testing.T) {
 	tests := []struct {
 		name           string

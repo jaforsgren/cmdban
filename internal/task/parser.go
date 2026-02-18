@@ -11,10 +11,12 @@ import (
 )
 
 var (
-	plainTagRegex = regexp.MustCompile(`@([\w][-\w]*)(?:\s|$)`)
-	statusRegex   = regexp.MustCompile(`@status:([\w][-\w]*)`)
-	priorityRegex = regexp.MustCompile(`@priority:(\d+)`)
-	markedRegex   = regexp.MustCompile(`@marked`)
+	plainTagRegex      = regexp.MustCompile(`@([\w][-\w]*)(?:\s|$)`)
+	statusRegex        = regexp.MustCompile(`@status:([\w][-\w]*)`)
+	priorityRegex      = regexp.MustCompile(`@priority:(\d+)`)
+	markedRegex        = regexp.MustCompile(`@marked`)
+	checkedBoxRegex    = regexp.MustCompile(`(?m)^- \[x\]`)
+	uncheckedBoxRegex  = regexp.MustCompile(`(?m)^- \[ \]`)
 )
 
 func ParseMarkdownFile(path string) (*Task, error) {
@@ -61,6 +63,8 @@ func ParseMarkdownFile(path string) (*Task, error) {
 	}
 
 	task.Description = strings.TrimSpace(strings.Join(lines, "\n"))
+	task.CheckboxDone = len(checkedBoxRegex.FindAllString(task.Description, -1))
+	task.CheckboxTotal = task.CheckboxDone + len(uncheckedBoxRegex.FindAllString(task.Description, -1))
 
 	footer := strings.Join(footerLines, " ")
 	parseFooter(task, footer)

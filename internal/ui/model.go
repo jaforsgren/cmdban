@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"strings"
@@ -1021,7 +1022,14 @@ func (m Model) renderTask(t *task.Task, selected bool, width int) string {
 			Render(" " + strings.Join(tagStrs, " "))
 	}
 
-	return style.Width(width).Render(title + tags)
+	var checkboxCounter string
+	if t.CheckboxTotal > 0 {
+		checkboxCounter = lipgloss.NewStyle().
+			Foreground(SubtleColor).
+			Render(fmt.Sprintf(" %d/%d", t.CheckboxDone, t.CheckboxTotal))
+	}
+
+	return style.Width(width).Render(title + tags + checkboxCounter)
 }
 
 func (m Model) renderFooter() string {
