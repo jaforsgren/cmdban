@@ -30,6 +30,7 @@ type KeyMap struct {
 	Refresh    key.Binding
 	OpenEditor key.Binding
 	Tag        key.Binding
+	Boards     key.Binding
 }
 
 var DefaultKeyMap = KeyMap{
@@ -141,6 +142,10 @@ var DefaultKeyMap = KeyMap{
 		key.WithKeys("t"),
 		key.WithHelp("t", "add tag"),
 	),
+	Boards: key.NewBinding(
+		key.WithKeys("ctrl+b"),
+		key.WithHelp("ctrl+b", "board switcher"),
+	),
 }
 
 func (k KeyMap) ShortHelp() []key.Binding {
@@ -154,6 +159,6 @@ func (k KeyMap) FullHelp() [][]key.Binding {
 		{k.MoveLeft, k.MoveRight, k.OrderUp, k.OrderDown},
 		{k.New, k.Edit, k.ToggleDone, k.Delete},
 		{k.Mark, k.Tag, k.Search, k.Filter, k.Refresh},
-		{k.Settings, k.Help, k.Quit},
+		{k.Settings, k.Help, k.Quit, k.Boards},
 	}
 }

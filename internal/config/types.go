@@ -78,6 +78,18 @@ func (c *Config) IsColumnHidden(column string) bool {
 	return false
 }
 
+func (c *Config) AddBoard(name, directory string) {
+	columns := make([]Column, len(DefaultColumns))
+	for i, col := range DefaultColumns {
+		columns[i] = Column{Name: col}
+	}
+	c.Boards = append(c.Boards, Board{
+		Name:      name,
+		Directory: directory,
+		Columns:   columns,
+	})
+}
+
 func (c *Config) ConfigPath() string {
 	return c.configPath
 }
