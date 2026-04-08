@@ -29,6 +29,7 @@ const (
 	ModeView
 	ModeTag
 	ModeSearch
+	ModeBoardSelector
 )
 
 type Model struct {
@@ -48,9 +49,11 @@ type Model struct {
 	message        string
 	gPressed       bool
 	err            error
-	tagSuggestions []string
-	tagSuggestion  string
-	searchFilter   string
+	tagSuggestions     []string
+	tagSuggestion      string
+	searchFilter       string
+	boardSelectorIndex int
+	pendingBoardName   string
 }
 
 type tasksLoadedMsg struct {
@@ -176,6 +179,10 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	if m.mode == ModeSearch {
 		return m.handleSearchMode(msg)
+	}
+
+	if m.mode == ModeBoardSelector {
+		return m.handleBoardSelectorMode(msg)
 	}
 
 	return m.handleNormalMode(msg)
@@ -366,6 +373,14 @@ func (m Model) handleInputMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m.editTask(value)
 		case "settings":
 			return m.handleSettingsCommand(value)
+		case "new-board-name":
+			m.pendingBoardName = value
+			m.inputAction = "new-board-dir"
+			m.textInput.Reset()
+			m.textInput.Placeholder = "Directory path..."
+			return m, textinput.Blink
+		case "new-board-dir":
+			return m.createBoard(m.pendingBoardName, value)
 		}
 
 		if m.mode == ModeCommand {
@@ -653,6 +668,11 @@ func (m Model) handleCommand(cmd string) (tea.Model, tea.Cmd) {
 	case "config", "conf", "c":
 		m.mode = ModeNormal
 		return m, m.openConfigInEditor()
+
+	case "boards", "board", "b":
+		m.boardSelectorIndex = m.activeBoardIndex()
+		m.mode = ModeBoardSelector
+		return m, nil
 
 	default:
 		m.message = "Unknown command: " + parts[0]
@@ -960,6 +980,8 @@ func (m Model) renderHeader() string {
 		modeStr = "[TAG]"
 	case ModeSearch:
 		modeStr = "[SEARCH]"
+	case ModeBoardSelector:
+		modeStr = "[BOARDS]"
 	default:
 		modeStr = "[NORMAL]"
 	}
@@ -969,9 +991,13 @@ func (m Model) renderHeader() string {
 		Bold(true).
 		Render(modeStr)
 
+	boardName := ""
+	if board := m.config.ActiveBoard(); board != nil {
+		boardName = lipgloss.NewStyle().Foreground(HighlightColor).Render(" [" + board.Name + "]")
+	}
 	dir := StatusBarStyle.Render("📁 " + m.config.TaskDirectory())
 
-	header := lipgloss.JoinHorizontal(lipgloss.Center, title, "  ", mode, "  ", dir)
+	header := lipgloss.JoinHorizontal(lipgloss.Center, title, boardName, "  ", mode, "  ", dir)
 	return header
 }
 
@@ -982,6 +1008,10 @@ func (m Model) renderBoard() string {
 
 	if m.mode == ModeView {
 		return m.renderTaskDetail()
+	}
+
+	if m.mode == ModeBoardSelector {
+		return m.renderBoardSelector()
 	}
 
 	laneWidth := GetLaneWidth(m.width, len(m.board.Lanes))
@@ -1232,11 +1262,117 @@ func (m Model) renderHelp() string {
   ────                          ────────
   ?        toggle help          :       command mode
   r        refresh              :q      quit
-  q        quit
+  q        quit                 :b      board switcher
 
   Press ? or ESC to close help
 `
 	return DialogStyle.Width(60).Render(help)
+}
+
+func (m Model) activeBoardIndex() int {
+	for i, b := range m.config.Boards {
+		if b.Name == m.config.CurrentBoard {
+			return i
+		}
+	}
+	return 0
+}
+
+func (m Model) handleBoardSelectorMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	boards := m.config.Boards
+	switch msg.String() {
+	case "j", "down":
+		m.boardSelectorIndex++
+		if m.boardSelectorIndex >= len(boards) {
+			m.boardSelectorIndex = 0
+		}
+	case "k", "up":
+		m.boardSelectorIndex--
+		if m.boardSelectorIndex < 0 {
+			m.boardSelectorIndex = len(boards) - 1
+		}
+	case "enter":
+		if m.boardSelectorIndex < len(boards) {
+			return m.switchBoard(boards[m.boardSelectorIndex].Name)
+		}
+	case "a":
+		m.mode = ModeInput
+		m.inputAction = "new-board-name"
+		m.textInput.Reset()
+		m.textInput.Placeholder = "Board name..."
+		m.textInput.Focus()
+		return m, textinput.Blink
+	case "esc", "q":
+		m.mode = ModeNormal
+	}
+	return m, nil
+}
+
+func (m Model) createBoard(name, directory string) (tea.Model, tea.Cmd) {
+	m.config.AddBoard(name, directory)
+	if err := m.config.Save(); err != nil {
+		m.message = "Error saving config: " + err.Error()
+		m.mode = ModeNormal
+		return m, nil
+	}
+	if err := m.config.EnsureTaskDirectory(); err != nil {
+		m.message = "Error creating directory: " + err.Error()
+	}
+	return m.switchBoard(name)
+}
+
+func (m Model) switchBoard(name string) (tea.Model, tea.Cmd) {
+	m.config.CurrentBoard = name
+	if err := m.config.Save(); err != nil {
+		m.message = "Error saving config: " + err.Error()
+		m.mode = ModeNormal
+		return m, nil
+	}
+	m.board = task.NewBoardWithColumns(m.config.AllColumns(), m.config.HiddenColumns())
+	m.activeLane = 0
+	m.activeTask = 0
+	m.mode = ModeNormal
+	m.message = "Switched to board: " + name
+	return m, m.loadTasks
+}
+
+func (m Model) renderBoardSelector() string {
+	boards := m.config.Boards
+	if len(boards) == 0 {
+		return DialogStyle.Render("No boards configured.\nAdd boards to ~/.cmdban.yaml")
+	}
+
+	var rows []string
+	rows = append(rows, lipgloss.NewStyle().Bold(true).Foreground(HighlightColor).Render("  Select Board  "))
+	rows = append(rows, lipgloss.NewStyle().Foreground(SubtleColor).Render("  j/k: navigate  enter: select  a: new  esc: cancel"))
+	rows = append(rows, "")
+
+	for i, b := range boards {
+		active := b.Name == m.config.CurrentBoard
+		cursor := "  "
+		if i == m.boardSelectorIndex {
+			cursor = "▶ "
+		}
+
+		nameStyle := lipgloss.NewStyle()
+		if i == m.boardSelectorIndex {
+			nameStyle = nameStyle.Foreground(lipgloss.Color("#FFFFFF")).Background(ActiveColor).Bold(true)
+		} else if active {
+			nameStyle = nameStyle.Foreground(HighlightColor).Bold(true)
+		}
+
+		activeMark := ""
+		if active {
+			activeMark = lipgloss.NewStyle().Foreground(SuccessColor).Render(" ✓")
+		}
+
+		dir := lipgloss.NewStyle().Foreground(SubtleColor).Render("  " + b.Directory)
+		row := cursor + nameStyle.Render(b.Name) + activeMark + "\n" + dir
+		rows = append(rows, row)
+	}
+
+	content := lipgloss.JoinVertical(lipgloss.Left, rows...)
+	return DialogStyle.Width(50).Render(content)
 }
 
 func min(a, b int) int {
