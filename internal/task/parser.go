@@ -6,15 +6,19 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 )
 
 var (
-	plainTagRegex = regexp.MustCompile(`@([\w][-\w]*)(?:\s|$)`)
-	statusRegex   = regexp.MustCompile(`@status:([\w][-\w]*)`)
-	priorityRegex = regexp.MustCompile(`@priority:(\d+)`)
-	markedRegex   = regexp.MustCompile(`@marked`)
+	plainTagRegex     = regexp.MustCompile(`@([\w][-\w]*)(?:\s|$)`)
+	statusRegex       = regexp.MustCompile(`@status:([\w][-\w]*)`)
+	priorityRegex     = regexp.MustCompile(`@priority:(\d+)`)
+	orderRegex        = regexp.MustCompile(`@order:(\d+)`)
+	markedRegex       = regexp.MustCompile(`@marked`)
+	checkedBoxRegex   = regexp.MustCompile(`(?m)^- \[x\]`)
+	uncheckedBoxRegex = regexp.MustCompile(`(?m)^- \[ \]`)
 )
 
 func ParseMarkdownFile(path string) (*Task, error) {
@@ -61,6 +65,8 @@ func ParseMarkdownFile(path string) (*Task, error) {
 	}
 
 	task.Description = strings.TrimSpace(strings.Join(lines, "\n"))
+	task.CheckboxDone = len(checkedBoxRegex.FindAllString(task.Description, -1))
+	task.CheckboxTotal = task.CheckboxDone + len(uncheckedBoxRegex.FindAllString(task.Description, -1))
 
 	footer := strings.Join(footerLines, " ")
 	parseFooter(task, footer)
@@ -75,6 +81,10 @@ func parseFooter(task *Task, footer string) {
 
 	if matches := priorityRegex.FindStringSubmatch(footer); len(matches) > 1 {
 		fmt.Sscanf(matches[1], "%d", &task.Priority)
+	}
+
+	if matches := orderRegex.FindStringSubmatch(footer); len(matches) > 1 {
+		fmt.Sscanf(matches[1], "%d", &task.Order)
 	}
 
 	task.Marked = markedRegex.MatchString(footer)
@@ -105,6 +115,10 @@ func WriteMarkdownFile(task *Task) error {
 
 	if task.Priority > 0 {
 		sb.WriteString(fmt.Sprintf(" @priority:%d", task.Priority))
+	}
+
+	if task.Order > 0 {
+		sb.WriteString(fmt.Sprintf(" @order:%d", task.Order))
 	}
 
 	if task.Marked {
@@ -146,15 +160,69 @@ func LoadTasksFromDirectory(dir string) ([]*Task, error) {
 		tasks = append(tasks, task)
 	}
 
+	sort.Slice(tasks, func(i, j int) bool {
+		oi, oj := tasks[i].Order, tasks[j].Order
+		if oi == 0 && oj == 0 {
+			return tasks[i].ID < tasks[j].ID
+		}
+		if oi == 0 {
+			return false
+		}
+		if oj == 0 {
+			return true
+		}
+		return oi < oj
+	})
+
 	return tasks, nil
 }
 
-func CreateNewTask(dir, title string) (*Task, error) {
-	id := fmt.Sprintf("%d.md", time.Now().UnixNano())
-	path := filepath.Join(dir, id)
+func sanitizeTitle(title string) string {
+	result := strings.ToLower(title)
+	result = strings.ReplaceAll(result, " ", "_")
 
-	task := &Task{
-		ID:        id,
+	sanitizeRegex := regexp.MustCompile(`[^a-z0-9_]`)
+	result = sanitizeRegex.ReplaceAllString(result, "")
+
+	multiUnderscoreRegex := regexp.MustCompile(`_+`)
+	result = multiUnderscoreRegex.ReplaceAllString(result, "_")
+
+	result = strings.Trim(result, "_")
+
+	return result
+}
+
+func generateShortID() string {
+	return fmt.Sprintf("%06x", time.Now().UnixNano()&0xFFFFFF)
+}
+
+func uniqueFilename(dir, slug string) string {
+	candidate := filepath.Join(dir, slug+".md")
+	if _, err := os.Stat(candidate); os.IsNotExist(err) {
+		return slug + ".md"
+	}
+	for i := 2; ; i++ {
+		name := fmt.Sprintf("%s_%d.md", slug, i)
+		candidate = filepath.Join(dir, name)
+		if _, err := os.Stat(candidate); os.IsNotExist(err) {
+			return name
+		}
+	}
+}
+
+func CreateNewTask(dir, title string) (*Task, error) {
+	slug := sanitizeTitle(title)
+
+	var filename string
+	if slug == "" {
+		filename = generateShortID() + ".md"
+	} else {
+		filename = uniqueFilename(dir, slug)
+	}
+	path := filepath.Join(dir, filename)
+
+	t := &Task{
+		ID:        filename,
 		Title:     title,
 		Status:    StatusBacklog,
 		FilePath:  path,
@@ -162,13 +230,20 @@ func CreateNewTask(dir, title string) (*Task, error) {
 		UpdatedAt: time.Now(),
 	}
 
-	if err := WriteMarkdownFile(task); err != nil {
+	if err := WriteMarkdownFile(t); err != nil {
 		return nil, err
 	}
 
-	return task, nil
+	return t, nil
 }
 
-func DeleteTask(task *Task) error {
-	return os.Remove(task.FilePath)
+const archiveDirName = "_archive"
+
+func ArchiveTask(t *Task) error {
+	archiveDir := filepath.Join(filepath.Dir(t.FilePath), archiveDirName)
+	if err := os.MkdirAll(archiveDir, 0755); err != nil {
+		return err
+	}
+	dest := filepath.Join(archiveDir, filepath.Base(t.FilePath))
+	return os.Rename(t.FilePath, dest)
 }

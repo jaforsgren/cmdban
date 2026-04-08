@@ -17,40 +17,58 @@ const (
 var DefaultLanes = []Status{StatusToday, StatusTomorrow, StatusBacklog, StatusDone}
 
 type Task struct {
-	ID          string
-	Title       string
-	Description string
-	Status      Status
-	Tags        []string
-	Priority    int
-	Marked      bool
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
-	FilePath    string
+	ID            string
+	Title         string
+	Description   string
+	Status        Status
+	Tags          []string
+	Priority      int
+	Marked        bool
+	Order         int
+	CheckboxDone  int
+	CheckboxTotal int
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
+	FilePath      string
 }
 
 type Board struct {
-	Tasks map[Status][]*Task
-	Lanes []Status
+	Tasks      map[Status][]*Task
+	Lanes      []Status
+	AllColumns []Status
 }
 
 func NewBoard() *Board {
-	return NewBoardWithHiddenColumns(nil)
+	return NewBoardWithColumns(nil, nil)
 }
 
 func NewBoardWithHiddenColumns(hiddenColumns []string) *Board {
+	return NewBoardWithColumns(nil, hiddenColumns)
+}
+
+func NewBoardWithColumns(visibleColumns []string, hiddenColumns []string) *Board {
+	allColumns := DefaultLanes
+
+	if len(visibleColumns) > 0 {
+		allColumns = make([]Status, len(visibleColumns))
+		for i, col := range visibleColumns {
+			allColumns[i] = Status(col)
+		}
+	}
+
 	var visibleLanes []Status
-	for _, lane := range DefaultLanes {
+	for _, lane := range allColumns {
 		if !isColumnHidden(string(lane), hiddenColumns) {
 			visibleLanes = append(visibleLanes, lane)
 		}
 	}
 
 	b := &Board{
-		Tasks: make(map[Status][]*Task),
-		Lanes: visibleLanes,
+		Tasks:      make(map[Status][]*Task),
+		Lanes:      visibleLanes,
+		AllColumns: allColumns,
 	}
-	for _, lane := range DefaultLanes {
+	for _, lane := range allColumns {
 		b.Tasks[lane] = []*Task{}
 	}
 	return b
@@ -66,6 +84,9 @@ func isColumnHidden(column string, hiddenColumns []string) bool {
 }
 
 func (b *Board) AddTask(t *Task) {
+	if _, exists := b.Tasks[t.Status]; !exists {
+		b.Tasks[t.Status] = []*Task{}
+	}
 	b.Tasks[t.Status] = append(b.Tasks[t.Status], t)
 }
 
@@ -79,6 +100,9 @@ func (b *Board) MoveTask(t *Task, newStatus Status) {
 	}
 	t.Status = newStatus
 	t.UpdatedAt = time.Now()
+	if _, exists := b.Tasks[newStatus]; !exists {
+		b.Tasks[newStatus] = []*Task{}
+	}
 	b.Tasks[newStatus] = append(b.Tasks[newStatus], t)
 }
 

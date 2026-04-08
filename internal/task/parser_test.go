@@ -187,24 +187,199 @@ func TestCreateNewTask(t *testing.T) {
 	}
 }
 
-func TestDeleteTask(t *testing.T) {
+func TestArchiveTask(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	task, err := CreateNewTask(tmpDir, "Task to Delete")
+	created, err := CreateNewTask(tmpDir, "Task to Archive")
 	if err != nil {
 		t.Fatalf("CreateNewTask failed: %v", err)
 	}
 
-	if _, err := os.Stat(task.FilePath); os.IsNotExist(err) {
-		t.Fatal("Task file should exist before deletion")
+	if _, err := os.Stat(created.FilePath); os.IsNotExist(err) {
+		t.Fatal("Task file should exist before archiving")
 	}
 
-	if err := DeleteTask(task); err != nil {
-		t.Fatalf("DeleteTask failed: %v", err)
+	if err := ArchiveTask(created); err != nil {
+		t.Fatalf("ArchiveTask failed: %v", err)
 	}
 
-	if _, err := os.Stat(task.FilePath); !os.IsNotExist(err) {
-		t.Error("Task file should not exist after deletion")
+	if _, err := os.Stat(created.FilePath); !os.IsNotExist(err) {
+		t.Error("Task file should not exist at original path after archiving")
+	}
+
+	archivePath := filepath.Join(tmpDir, archiveDirName, filepath.Base(created.FilePath))
+	if _, err := os.Stat(archivePath); os.IsNotExist(err) {
+		t.Error("Task file should exist in _archive directory")
+	}
+}
+
+func TestSanitizeTitle(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"Simple Title", "simple_title"},
+		{"Fix API: Rate Limiting", "fix_api_rate_limiting"},
+		{"Update the login flow!", "update_the_login_flow"},
+		{"Add feature #123", "add_feature_123"},
+		{"  spaces   everywhere  ", "spaces_everywhere"},
+		{"UPPERCASE TITLE", "uppercase_title"},
+		{"special@chars#here$now", "specialcharsherenow"},
+		{"multiple___underscores", "multiple_underscores"},
+		{"", ""},
+		{"!@#$%", ""},
+		{"123_numbers_456", "123_numbers_456"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.input, func(t *testing.T) {
+			result := sanitizeTitle(tc.input)
+			if result != tc.expected {
+				t.Errorf("sanitizeTitle(%q) = %q, expected %q", tc.input, result, tc.expected)
+			}
+		})
+	}
+}
+
+func TestCreateNewTaskFilename(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	created, err := CreateNewTask(tmpDir, "Fix the Bug")
+	if err != nil {
+		t.Fatalf("CreateNewTask failed: %v", err)
+	}
+
+	if created.ID != "fix_the_bug.md" {
+		t.Errorf("Expected ID 'fix_the_bug.md', got '%s'", created.ID)
+	}
+}
+
+func TestCreateNewTaskFilenameCollision(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	first, err := CreateNewTask(tmpDir, "Fix the Bug")
+	if err != nil {
+		t.Fatalf("CreateNewTask (first) failed: %v", err)
+	}
+	if first.ID != "fix_the_bug.md" {
+		t.Errorf("Expected first ID 'fix_the_bug.md', got '%s'", first.ID)
+	}
+
+	second, err := CreateNewTask(tmpDir, "Fix the Bug")
+	if err != nil {
+		t.Fatalf("CreateNewTask (second) failed: %v", err)
+	}
+	if second.ID != "fix_the_bug_2.md" {
+		t.Errorf("Expected second ID 'fix_the_bug_2.md', got '%s'", second.ID)
+	}
+}
+
+func TestCreateNewTaskEmptySlug(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	created, err := CreateNewTask(tmpDir, "!@#$%")
+	if err != nil {
+		t.Fatalf("CreateNewTask failed: %v", err)
+	}
+
+	if strings.HasPrefix(created.ID, "_") {
+		t.Errorf("ID should not start with underscore when slug is empty, got '%s'", created.ID)
+	}
+
+	if !strings.HasSuffix(created.ID, ".md") {
+		t.Errorf("Expected ID to end with '.md', got '%s'", created.ID)
+	}
+}
+
+func TestLoadTasksOrderSorting(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	files := []struct {
+		name    string
+		content string
+	}{
+		{"c_task.md", "# C Task\n\n---\n@status:backlog @order:3"},
+		{"a_task.md", "# A Task\n\n---\n@status:backlog @order:1"},
+		{"b_task.md", "# B Task\n\n---\n@status:backlog @order:2"},
+		{"z_unordered.md", "# Z Unordered\n\n---\n@status:backlog"},
+	}
+	for _, f := range files {
+		if err := os.WriteFile(filepath.Join(tmpDir, f.name), []byte(f.content), 0644); err != nil {
+			t.Fatalf("Failed to create test file: %v", err)
+		}
+	}
+
+	tasks, err := LoadTasksFromDirectory(tmpDir)
+	if err != nil {
+		t.Fatalf("LoadTasksFromDirectory failed: %v", err)
+	}
+
+	if len(tasks) != 4 {
+		t.Fatalf("Expected 4 tasks, got %d", len(tasks))
+	}
+
+	if tasks[0].Title != "A Task" {
+		t.Errorf("Expected first task 'A Task', got '%s'", tasks[0].Title)
+	}
+	if tasks[1].Title != "B Task" {
+		t.Errorf("Expected second task 'B Task', got '%s'", tasks[1].Title)
+	}
+	if tasks[2].Title != "C Task" {
+		t.Errorf("Expected third task 'C Task', got '%s'", tasks[2].Title)
+	}
+	if tasks[3].Title != "Z Unordered" {
+		t.Errorf("Expected unordered task last, got '%s'", tasks[3].Title)
+	}
+}
+
+func TestParseCheckboxes(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "checkbox-task.md")
+
+	content := `# Checkbox Task
+
+- [x] Done item one
+- [x] Done item two
+- [ ] Pending item
+- [ ] Another pending
+
+---
+@status:today
+`
+	if err := os.WriteFile(testFile, []byte(content), 0644); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+
+	task, err := ParseMarkdownFile(testFile)
+	if err != nil {
+		t.Fatalf("ParseMarkdownFile failed: %v", err)
+	}
+
+	if task.CheckboxTotal != 4 {
+		t.Errorf("Expected CheckboxTotal 4, got %d", task.CheckboxTotal)
+	}
+
+	if task.CheckboxDone != 2 {
+		t.Errorf("Expected CheckboxDone 2, got %d", task.CheckboxDone)
+	}
+}
+
+func TestParseCheckboxesNone(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "no-checkbox-task.md")
+
+	content := "# Simple Task\n\nJust some text.\n\n---\n@status:backlog\n"
+	if err := os.WriteFile(testFile, []byte(content), 0644); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+
+	task, err := ParseMarkdownFile(testFile)
+	if err != nil {
+		t.Fatalf("ParseMarkdownFile failed: %v", err)
+	}
+
+	if task.CheckboxTotal != 0 {
+		t.Errorf("Expected CheckboxTotal 0, got %d", task.CheckboxTotal)
 	}
 }
 

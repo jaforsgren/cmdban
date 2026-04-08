@@ -13,6 +13,8 @@ type KeyMap struct {
 	HalfDown   key.Binding
 	MoveLeft   key.Binding
 	MoveRight  key.Binding
+	OrderUp    key.Binding
+	OrderDown  key.Binding
 	New        key.Binding
 	Edit       key.Binding
 	Delete     key.Binding
@@ -70,6 +72,14 @@ var DefaultKeyMap = KeyMap{
 	MoveRight: key.NewBinding(
 		key.WithKeys("L", "ctrl+right", "ctrl+l"),
 		key.WithHelp("L/ctrl+l", "move task right"),
+	),
+	OrderUp: key.NewBinding(
+		key.WithKeys("ctrl+k"),
+		key.WithHelp("ctrl+k", "move task up"),
+	),
+	OrderDown: key.NewBinding(
+		key.WithKeys("ctrl+j"),
+		key.WithHelp("ctrl+j", "move task down"),
 	),
 	New: key.NewBinding(
 		key.WithKeys("a"),
@@ -141,7 +151,7 @@ func (k KeyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Up, k.Down, k.Left, k.Right},
 		{k.Top, k.Bottom, k.HalfUp, k.HalfDown},
-		{k.MoveLeft, k.MoveRight},
+		{k.MoveLeft, k.MoveRight, k.OrderUp, k.OrderDown},
 		{k.New, k.Edit, k.ToggleDone, k.Delete},
 		{k.Mark, k.Tag, k.Search, k.Filter, k.Refresh},
 		{k.Settings, k.Help, k.Quit},
