@@ -34,16 +34,37 @@ func laneForState(cfg *config.AzureDevOpsConfig, state string) task.Status {
 	return task.StatusBacklog
 }
 
+// resolveIterationPath converts a stored iteration value to the full ADO path
+// required by WIQL. It handles three forms:
+//   - "@CurrentIteration" → resolved via the team settings API
+//   - "Project\Path\Name"  → already a full path, used as-is
+//   - "Name"               → bare name, looked up from all team iterations
+func resolveIterationPath(client *Client, stored string) (string, error) {
+	if stored == "@CurrentIteration" {
+		return client.CurrentIterationPath()
+	}
+	if strings.Contains(stored, `\`) {
+		return stored, nil
+	}
+	// Bare name: find the matching iteration to get its full path.
+	iterations, err := client.ListIterations()
+	if err != nil {
+		return "", fmt.Errorf("listing iterations: %w", err)
+	}
+	for _, it := range iterations {
+		if strings.EqualFold(it.Name, stored) {
+			return it.Path, nil
+		}
+	}
+	return "", fmt.Errorf("iteration %q not found in team iterations", stored)
+}
+
 func FetchBoardTasks(adoCfg *config.AzureDevOpsConfig, pat string) ([]*task.Task, error) {
 	client := NewClient(adoCfg.Org, adoCfg.Project, adoCfg.Team, pat)
 
-	iterationPath := adoCfg.Iteration
-	if iterationPath == "@CurrentIteration" {
-		var err error
-		iterationPath, err = client.CurrentIterationPath()
-		if err != nil {
-			return nil, fmt.Errorf("resolving iteration: %w", err)
-		}
+	iterationPath, err := resolveIterationPath(client, adoCfg.Iteration)
+	if err != nil {
+		return nil, fmt.Errorf("resolving iteration: %w", err)
 	}
 
 	items, err := client.FetchWorkItems(iterationPath)
@@ -116,13 +137,9 @@ func UpdateRemoteTitle(adoCfg *config.AzureDevOpsConfig, pat string, t *task.Tas
 func CreateRemoteTask(adoCfg *config.AzureDevOpsConfig, pat string, title string, lane task.Status) (*task.Task, error) {
 	client := NewClient(adoCfg.Org, adoCfg.Project, adoCfg.Team, pat)
 
-	iterationPath := adoCfg.Iteration
-	if iterationPath == "@CurrentIteration" {
-		var err error
-		iterationPath, err = client.CurrentIterationPath()
-		if err != nil {
-			return nil, fmt.Errorf("resolving iteration: %w", err)
-		}
+	iterationPath, err := resolveIterationPath(client, adoCfg.Iteration)
+	if err != nil {
+		return nil, fmt.Errorf("resolving iteration: %w", err)
 	}
 
 	workItemType := adoCfg.DefaultWorkItemType

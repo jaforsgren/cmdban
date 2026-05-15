@@ -34,6 +34,7 @@ const (
 	ModeSearch
 	ModeBoardSelector
 	ModePATManager
+	ModeADOSetup
 )
 
 type Model struct {
@@ -63,6 +64,7 @@ type Model struct {
 	pendingPATName     string
 	revealedPATIndex   int
 	lastSyncTime       time.Time
+	adoSetup           adoSetupState
 }
 
 type tasksLoadedMsg struct {
@@ -176,6 +178,30 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case adoStateUpdatedMsg:
 		return m, nil
 
+	case adoOrgsDiscoveredMsg:
+		return m.handleADOOrgsDiscovered(msg.orgs)
+
+	case adoOrgsDiscoveryFailedMsg:
+		return m.handleADOOrgsDiscoveryFailed(msg.err)
+
+	case adoProjectsDiscoveredMsg:
+		m.adoSetup.loading = false
+		m.adoSetup.projects = msg.projects
+		m.adoSetup.selectorIndex = 0
+		return m, nil
+
+	case adoTeamsDiscoveredMsg:
+		m.adoSetup.loading = false
+		m.adoSetup.teams = msg.teams
+		m.adoSetup.selectorIndex = bestMatchIndex(msg.teams, m.adoSetup.team)
+		return m, nil
+
+	case adoBoardColumnsDiscoveredMsg:
+		return m.handleADOBoardColumnsDiscovered(msg.columns)
+
+	case adoIterationsDiscoveredMsg:
+		return m.handleADOIterationsDiscovered(msg.iterations)
+
 	case errMsg:
 		m.err = msg.err
 		m.message = "Error: " + msg.err.Error()
@@ -228,6 +254,10 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	if m.mode == ModePATManager {
 		return m.handlePATManagerMode(msg)
+	}
+
+	if m.mode == ModeADOSetup {
+		return m.handleADOSetupMode(msg)
 	}
 
 	return m.handleNormalMode(msg)
@@ -468,6 +498,37 @@ func (m Model) handleInputMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.textInput.Reset()
 			m.textInput.EchoMode = textinput.EchoNormal
 			return m, nil
+		case "ado-url":
+			if value == "" {
+				m.mode = ModeADOSetup
+				return m, nil
+			}
+			org, project, team, boardLevel, err := parseADOBoardURL(value)
+			if err != nil {
+				m.message = "Invalid ADO URL: " + err.Error()
+				m.mode = ModeNormal
+				return m, nil
+			}
+			m.adoSetup.org = org
+			m.adoSetup.project = project
+			m.adoSetup.team = team
+			m.adoSetup.boardLevel = boardLevel
+			m.adoSetup.boardName = strings.ToLower(strings.ReplaceAll(project, " ", "-")) + "-sprint"
+			m.adoSetup.fromURL = true
+			m.mode = ModeADOSetup
+			return m, nil
+		case "ado-org-name":
+			m.adoSetup.org = value
+			m.adoSetup.loadError = ""
+			m.adoSetup.loading = true
+			m.adoSetup.step = adoSetupStepSelectProject
+			m.adoSetup.selectorIndex = 0
+			m.mode = ModeADOSetup
+			m.textInput.Reset()
+			m.textInput.EchoMode = textinput.EchoNormal
+			return m, m.discoverProjects
+		case "ado-board-name":
+			return m.saveADOBoard(value)
 		}
 
 		if m.mode == ModeCommand {
@@ -1214,6 +1275,8 @@ func (m Model) renderHeader() string {
 		modeStr = "[BOARDS]"
 	case ModePATManager:
 		modeStr = "[PATS]"
+	case ModeADOSetup:
+		modeStr = "[ADO SETUP]"
 	default:
 		modeStr = "[NORMAL]"
 	}
@@ -1263,6 +1326,10 @@ func (m Model) renderBoard() string {
 		return m.renderPATManager()
 	}
 
+	if m.mode == ModeADOSetup {
+		return m.renderADOSetup()
+	}
+
 	laneWidth := GetLaneWidth(m.width, len(m.board.Lanes))
 	if laneWidth < 20 {
 		laneWidth = 20
@@ -1299,18 +1366,21 @@ func (m Model) renderLane(index int, status task.Status, width int) string {
 		),
 	)
 
-	var taskViews []string
-	taskViews = append(taskViews, header)
-
-	availableHeight := m.height - 10
+	// 2 for lane border (top+bottom), 2 for app header+footer (conservative)
+	availableHeight := m.height - 4
 	if availableHeight < 5 {
 		availableHeight = 5
 	}
 
-	for i, t := range tasks {
-		isSelected := isActive && i == m.activeTask
-		taskViews = append(taskViews, m.renderTask(t, isSelected, width-4))
+	headerHeight := lipgloss.Height(header)
+	// Reserve 2 lines for the ▲/▼ scroll indicators so they never push content over budget.
+	contentHeight := availableHeight - headerHeight - 2
+	if contentHeight < 1 {
+		contentHeight = 1
 	}
+
+	var taskViews []string
+	taskViews = append(taskViews, header)
 
 	if len(tasks) == 0 {
 		empty := lipgloss.NewStyle().
@@ -1319,10 +1389,74 @@ func (m Model) renderLane(index int, status task.Status, width int) string {
 			Width(width - 4).
 			Render("(empty)")
 		taskViews = append(taskViews, empty)
+	} else {
+		rendered := make([]string, len(tasks))
+		for i, t := range tasks {
+			isSelected := isActive && i == m.activeTask
+			rendered[i] = m.renderTask(t, isSelected, width-4)
+		}
+
+		activeIdx := 0
+		if isActive {
+			activeIdx = m.activeTask
+		}
+		visible, above, below := laneScrollWindow(rendered, activeIdx, contentHeight)
+		if above > 0 {
+			taskViews = append(taskViews, lipgloss.NewStyle().
+				Foreground(SubtleColor).
+				Width(width-4).
+				Render(fmt.Sprintf("  ▲ %d more", above)))
+		}
+		taskViews = append(taskViews, visible...)
+		if below > 0 {
+			taskViews = append(taskViews, lipgloss.NewStyle().
+				Foreground(SubtleColor).
+				Width(width-4).
+				Render(fmt.Sprintf("  ▼ %d more", below)))
+		}
 	}
 
 	content := lipgloss.JoinVertical(lipgloss.Left, taskViews...)
+	// Hard-clamp: lipgloss .Height() pads but never clips, so truncate here.
+	if lines := strings.Split(content, "\n"); len(lines) > availableHeight {
+		content = strings.Join(lines[:availableHeight], "\n")
+	}
 	return laneStyle.Width(width).Height(availableHeight).Render(content)
+}
+
+// laneScrollWindow returns the slice of rendered task strings that fit within
+// availableHeight lines, centred around activeIdx. It also returns the number
+// of items hidden above and below the window.
+func laneScrollWindow(rendered []string, activeIdx, availableHeight int) (visible []string, above, below int) {
+	if availableHeight <= 0 {
+		return rendered, 0, 0
+	}
+
+	heights := make([]int, len(rendered))
+	for i, s := range rendered {
+		h := lipgloss.Height(s)
+		if h < 1 {
+			h = 1
+		}
+		heights[i] = h
+	}
+
+	// Seed window with the active item.
+	start := activeIdx
+	end := activeIdx + 1
+	used := heights[activeIdx]
+
+	// Expand backward then forward greedily.
+	for start > 0 && used+heights[start-1] <= availableHeight {
+		start--
+		used += heights[start]
+	}
+	for end < len(rendered) && used+heights[end] <= availableHeight {
+		used += heights[end]
+		end++
+	}
+
+	return rendered[start:end], start, len(rendered) - end
 }
 
 func (m Model) renderTask(t *task.Task, selected bool, width int) string {
@@ -1421,7 +1555,11 @@ func (m Model) renderFooter() string {
 	}
 
 	if m.message != "" {
-		parts = append(parts, StatusBarStyle.Foreground(WarningColor).Render(m.message))
+		msgWidth := m.width - 4
+		if msgWidth < 20 {
+			msgWidth = 20
+		}
+		parts = append(parts, StatusBarStyle.Foreground(WarningColor).Width(msgWidth).Render(m.message))
 	}
 
 	helpView := m.help.View(m.keys)
@@ -1618,6 +1756,8 @@ func (m Model) handleBoardSelectorMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.textInput.EchoMode = textinput.EchoNormal
 		m.textInput.Focus()
 		return m, textinput.Blink
+	case "A":
+		return m.startADOSetup()
 	case "esc", "q":
 		m.mode = ModeNormal
 	}
@@ -1664,7 +1804,7 @@ func (m Model) renderBoardSelector() string {
 
 	var rows []string
 	rows = append(rows, lipgloss.NewStyle().Bold(true).Foreground(HighlightColor).Render("  Select Board  "))
-	rows = append(rows, lipgloss.NewStyle().Foreground(SubtleColor).Render("  j/k: navigate  enter: select  a: new  esc: cancel"))
+	rows = append(rows, lipgloss.NewStyle().Foreground(SubtleColor).Render("  j/k: navigate  enter: select  a: new local  A: new ADO  esc: cancel"))
 	rows = append(rows, "")
 
 	for i, b := range boards {
@@ -1763,6 +1903,24 @@ func maskToken(token string) string {
 		return strings.Repeat("•", len(token))
 	}
 	return token[:4] + strings.Repeat("•", 12) + token[len(token)-4:]
+}
+
+// bestMatchIndex returns the index of the first case-insensitive match for hint
+// in items, falling back to 0 if nothing matches.
+func bestMatchIndex(items []string, hint string) int {
+	hint = strings.ToLower(hint)
+	for i, item := range items {
+		if strings.ToLower(item) == hint {
+			return i
+		}
+	}
+	// partial match fallback
+	for i, item := range items {
+		if strings.Contains(strings.ToLower(item), hint) {
+			return i
+		}
+	}
+	return 0
 }
 
 func min(a, b int) int {

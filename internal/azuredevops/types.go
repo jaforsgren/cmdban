@@ -59,3 +59,54 @@ type PatchOperation struct {
 	Path  string `json:"path"`
 	Value any    `json:"value"`
 }
+
+type KanbanBoard struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+type KanbanBoardListResponse struct {
+	Count int           `json:"count"`
+	Value []KanbanBoard `json:"value"`
+}
+
+type BoardColumn struct {
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	ColumnType string `json:"columnType"` // "incoming", "inProgress", "outgoing"
+}
+
+type BoardColumnListResponse struct {
+	Count int           `json:"count"`
+	Value []BoardColumn `json:"value"`
+}
+
+type Account struct {
+	AccountID   string `json:"accountId"`
+	AccountName string `json:"accountName"`
+}
+
+type AccountListResponse struct {
+	Count int       `json:"count"`
+	Value []Account `json:"value"`
+}
+
+type Project struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+type ProjectListResponse struct {
+	Count int       `json:"count"`
+	Value []Project `json:"value"`
+}
+
+type Team struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+type TeamListResponse struct {
+	Count int    `json:"count"`
+	Value []Team `json:"value"`
+}

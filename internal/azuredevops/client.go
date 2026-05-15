@@ -132,24 +132,51 @@ func (c *Client) patchJSON(url, contentType string, payload, out any) error {
 	return nil
 }
 
-func (c *Client) CurrentIterationPath() (string, error) {
+func (c *Client) ListIterations() ([]Iteration, error) {
 	url := fmt.Sprintf(
+		"https://dev.azure.com/%s/%s/%s/_apis/work/teamsettings/iterations?api-version=%s",
+		c.org, c.project, c.team, apiVersion,
+	)
+	var resp IterationListResponse
+	if err := c.get(url, &resp); err != nil {
+		return nil, err
+	}
+	return resp.Value, nil
+}
+
+func (c *Client) CurrentIterationPath() (string, error) {
+	currentURL := fmt.Sprintf(
 		"https://dev.azure.com/%s/%s/%s/_apis/work/teamsettings/iterations?$timeframe=current&api-version=%s",
 		c.org, c.project, c.team, apiVersion,
 	)
-
-	var result IterationListResponse
-	if err := c.get(url, &result); err != nil {
+	var current IterationListResponse
+	if err := c.get(currentURL, &current); err != nil {
 		return "", err
 	}
-	if len(result.Value) == 0 {
-		return "", fmt.Errorf("no current iteration found for team %q", c.team)
+	if len(current.Value) > 0 {
+		return current.Value[0].Path, nil
 	}
-	return result.Value[0].Path, nil
+
+	// Between sprints: fall back to the most recently started past iteration.
+	pastURL := fmt.Sprintf(
+		"https://dev.azure.com/%s/%s/%s/_apis/work/teamsettings/iterations?$timeframe=past&api-version=%s",
+		c.org, c.project, c.team, apiVersion,
+	)
+	var past IterationListResponse
+	if err := c.get(pastURL, &past); err != nil {
+		return "", err
+	}
+	if len(past.Value) > 0 {
+		return past.Value[len(past.Value)-1].Path, nil
+	}
+
+	return "", fmt.Errorf("no iterations found for team %q", c.team)
 }
 
+const workItemBatchSize = 200
+
 func (c *Client) FetchWorkItems(iterationPath string) ([]WorkItem, error) {
-	wiqlURL := fmt.Sprintf("%s/_apis/wit/wiql?api-version=%s", c.baseURL(), apiVersion)
+	wiqlURL := fmt.Sprintf("%s/_apis/wit/wiql?$top=%d&api-version=%s", c.baseURL(), workItemBatchSize, apiVersion)
 
 	escapedPath := strings.ReplaceAll(iterationPath, `\`, `\\`)
 	query := fmt.Sprintf(
@@ -166,23 +193,30 @@ func (c *Client) FetchWorkItems(iterationPath string) ([]WorkItem, error) {
 		return nil, nil
 	}
 
-	ids := make([]string, len(wiqlResult.WorkItems))
-	for i, ref := range wiqlResult.WorkItems {
-		ids[i] = fmt.Sprintf("%d", ref.ID)
-	}
-
 	fields := "System.Id,System.Title,System.State,System.Description,System.Tags,System.WorkItemType,System.AssignedTo,System.IterationPath,System.ChangedDate,System.CreatedDate"
-	detailURL := fmt.Sprintf(
-		"%s/_apis/wit/workitems?ids=%s&fields=%s&api-version=%s",
-		c.baseURL(), strings.Join(ids, ","), fields, apiVersion,
-	)
-
-	var listResp WorkItemListResponse
-	if err := c.get(detailURL, &listResp); err != nil {
-		return nil, err
+	var all []WorkItem
+	for start := 0; start < len(wiqlResult.WorkItems); start += workItemBatchSize {
+		end := start + workItemBatchSize
+		if end > len(wiqlResult.WorkItems) {
+			end = len(wiqlResult.WorkItems)
+		}
+		batch := wiqlResult.WorkItems[start:end]
+		ids := make([]string, len(batch))
+		for i, ref := range batch {
+			ids[i] = fmt.Sprintf("%d", ref.ID)
+		}
+		detailURL := fmt.Sprintf(
+			"%s/_apis/wit/workitems?ids=%s&fields=%s&api-version=%s",
+			c.baseURL(), strings.Join(ids, ","), fields, apiVersion,
+		)
+		var listResp WorkItemListResponse
+		if err := c.get(detailURL, &listResp); err != nil {
+			return nil, err
+		}
+		all = append(all, listResp.Value...)
 	}
 
-	return listResp.Value, nil
+	return all, nil
 }
 
 func (c *Client) UpdateWorkItemState(id int, state string) error {
