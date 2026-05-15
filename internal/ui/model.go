@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
@@ -12,8 +13,10 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"cmdban/internal/azuredevops"
 	"cmdban/internal/config"
 	"cmdban/internal/markdown"
+	"cmdban/internal/pat"
 	"cmdban/internal/task"
 )
 
@@ -30,30 +33,36 @@ const (
 	ModeTag
 	ModeSearch
 	ModeBoardSelector
+	ModePATManager
 )
 
 type Model struct {
-	board          *task.Board
-	config         *config.Config
-	keys           KeyMap
-	help           help.Model
-	textInput      textinput.Model
-	mdRenderer     *markdown.Renderer
-	width          int
-	height         int
-	activeLane     int
-	activeTask     int
-	viewScroll     int
-	mode           Mode
-	inputAction    string
-	message        string
-	gPressed       bool
-	err            error
+	board              *task.Board
+	config             *config.Config
+	patStore           *pat.Store
+	keys               KeyMap
+	help               help.Model
+	textInput          textinput.Model
+	mdRenderer         *markdown.Renderer
+	width              int
+	height             int
+	activeLane         int
+	activeTask         int
+	viewScroll         int
+	mode               Mode
+	inputAction        string
+	message            string
+	gPressed           bool
+	err                error
 	tagSuggestions     []string
 	tagSuggestion      string
 	searchFilter       string
 	boardSelectorIndex int
 	pendingBoardName   string
+	patSelectorIndex   int
+	pendingPATName     string
+	revealedPATIndex   int
+	lastSyncTime       time.Time
 }
 
 type tasksLoadedMsg struct {
@@ -63,6 +72,8 @@ type tasksLoadedMsg struct {
 type taskSavedMsg struct {
 	task *task.Task
 }
+
+type adoStateUpdatedMsg struct{}
 
 type errMsg struct {
 	err error
@@ -88,16 +99,23 @@ func NewModel(cfg *config.Config) Model {
 	mdStyles := markdown.DefaultStyles()
 	mdRenderer := markdown.NewRenderer(mdStyles)
 
+	patStore, err := pat.Load()
+	if err != nil {
+		patStore = &pat.Store{}
+	}
+
 	return Model{
-		board:      task.NewBoardWithColumns(cfg.AllColumns(), cfg.HiddenColumns()),
-		config:     cfg,
-		keys:       DefaultKeyMap,
-		help:       h,
-		textInput:  ti,
-		mdRenderer: mdRenderer,
-		activeLane: 0,
-		activeTask: 0,
-		mode:       ModeNormal,
+		board:            task.NewBoardWithColumns(cfg.AllColumns(), cfg.HiddenColumns()),
+		config:           cfg,
+		patStore:         patStore,
+		keys:             DefaultKeyMap,
+		help:             h,
+		textInput:        ti,
+		mdRenderer:       mdRenderer,
+		activeLane:       0,
+		activeTask:       0,
+		mode:             ModeNormal,
+		revealedPATIndex: -1,
 	}
 }
 
@@ -106,7 +124,23 @@ func (m Model) Init() tea.Cmd {
 }
 
 func (m Model) loadTasks() tea.Msg {
+	if m.config.IsADOBoard() {
+		return m.loadADOTasks()
+	}
 	tasks, err := task.LoadTasksFromDirectory(m.config.TaskDirectory())
+	if err != nil {
+		return errMsg{err}
+	}
+	return tasksLoadedMsg{tasks}
+}
+
+func (m Model) loadADOTasks() tea.Msg {
+	adoCfg := m.config.ActiveBoard().AzureDevOps
+	token, ok := m.patStore.Get(adoCfg.PAT)
+	if !ok {
+		return errMsg{fmt.Errorf("PAT %q not found — run :pats to add it", adoCfg.PAT)}
+	}
+	tasks, err := azuredevops.FetchBoardTasks(adoCfg, token)
 	if err != nil {
 		return errMsg{err}
 	}
@@ -130,10 +164,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.board.AddTask(t)
 		}
 		m.clampSelection()
+		if m.config.IsADOBoard() {
+			m.lastSyncTime = time.Now()
+			m.message = ""
+		}
 		return m, nil
 
 	case taskSavedMsg:
 		return m, m.loadTasks
+
+	case adoStateUpdatedMsg:
+		return m, nil
 
 	case errMsg:
 		m.err = msg.err
@@ -183,6 +224,10 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	if m.mode == ModeBoardSelector {
 		return m.handleBoardSelectorMode(msg)
+	}
+
+	if m.mode == ModePATManager {
+		return m.handlePATManagerMode(msg)
 	}
 
 	return m.handleNormalMode(msg)
@@ -276,6 +321,7 @@ func (m Model) handleNormalMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.inputAction = "new"
 		m.textInput.Reset()
 		m.textInput.Placeholder = "Task title..."
+		m.textInput.EchoMode = textinput.EchoNormal
 		m.textInput.Focus()
 		m.gPressed = false
 		return m, textinput.Blink
@@ -286,6 +332,7 @@ func (m Model) handleNormalMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.mode = ModeInput
 			m.inputAction = "edit"
 			m.textInput.SetValue(t.Title)
+			m.textInput.EchoMode = textinput.EchoNormal
 			m.textInput.Focus()
 			m.gPressed = false
 			return m, textinput.Blink
@@ -303,9 +350,14 @@ func (m Model) handleNormalMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case key.Matches(msg, m.keys.Tag):
 		if m.selectedTask() != nil {
+			if m.config.IsADOBoard() {
+				m.message = "Tags are managed in Azure DevOps"
+				return m, nil
+			}
 			m.mode = ModeTag
 			m.textInput.Reset()
 			m.textInput.Placeholder = "tag name..."
+			m.textInput.EchoMode = textinput.EchoNormal
 			m.textInput.Focus()
 			m.tagSuggestions = m.collectAllTags()
 			m.tagSuggestion = ""
@@ -314,6 +366,10 @@ func (m Model) handleNormalMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case key.Matches(msg, m.keys.Mark):
+		if m.config.IsADOBoard() {
+			m.message = "Marking is not supported for Azure DevOps boards"
+			return m, nil
+		}
 		return m.toggleMark()
 
 	case key.Matches(msg, m.keys.Settings):
@@ -321,6 +377,7 @@ func (m Model) handleNormalMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.inputAction = ""
 		m.textInput.Reset()
 		m.textInput.Placeholder = "command..."
+		m.textInput.EchoMode = textinput.EchoNormal
 		m.textInput.Focus()
 		m.gPressed = false
 		return m, textinput.Blink
@@ -329,12 +386,16 @@ func (m Model) handleNormalMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.mode = ModeSearch
 		m.textInput.Reset()
 		m.textInput.Placeholder = "search..."
+		m.textInput.EchoMode = textinput.EchoNormal
 		m.textInput.Focus()
 		m.gPressed = false
 		return m, textinput.Blink
 
 	case key.Matches(msg, m.keys.Refresh):
 		m.gPressed = false
+		if m.config.IsADOBoard() {
+			m.message = "Syncing with Azure DevOps..."
+		}
 		return m, m.loadTasks
 
 	case key.Matches(msg, m.keys.Boards):
@@ -363,12 +424,14 @@ func (m Model) handleInputMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.Escape):
 		m.mode = ModeNormal
 		m.textInput.Reset()
+		m.textInput.EchoMode = textinput.EchoNormal
 		return m, nil
 
 	case key.Matches(msg, m.keys.Enter):
 		value := strings.TrimSpace(m.textInput.Value())
 		if value == "" {
 			m.mode = ModeNormal
+			m.textInput.EchoMode = textinput.EchoNormal
 			return m, nil
 		}
 
@@ -387,6 +450,24 @@ func (m Model) handleInputMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, textinput.Blink
 		case "new-board-dir":
 			return m.createBoard(m.pendingBoardName, value)
+		case "pat-name":
+			m.pendingPATName = value
+			m.inputAction = "pat-token"
+			m.textInput.Reset()
+			m.textInput.Placeholder = "PAT token..."
+			m.textInput.EchoMode = textinput.EchoPassword
+			return m, textinput.Blink
+		case "pat-token":
+			m.patStore.Set(m.pendingPATName, value)
+			if err := m.patStore.Save(); err != nil {
+				m.message = "Error saving PAT: " + err.Error()
+			} else {
+				m.message = fmt.Sprintf("PAT %q saved", m.pendingPATName)
+			}
+			m.mode = ModePATManager
+			m.textInput.Reset()
+			m.textInput.EchoMode = textinput.EchoNormal
+			return m, nil
 		}
 
 		if m.mode == ModeCommand {
@@ -472,6 +553,7 @@ func (m Model) handleViewMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.mode = ModeInput
 			m.inputAction = "edit"
 			m.textInput.SetValue(t.Title)
+			m.textInput.EchoMode = textinput.EchoNormal
 			m.textInput.Focus()
 			return m, textinput.Blink
 		}
@@ -490,11 +572,18 @@ func (m Model) handleViewMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.OpenEditor):
 		t := m.selectedTask()
 		if t != nil {
+			if m.config.IsADOBoard() {
+				m.message = "No local file for Azure DevOps work items"
+				return m, nil
+			}
 			return m, m.openInEditor(t.FilePath)
 		}
 		return m, nil
 
 	case key.Matches(msg, m.keys.Refresh):
+		if m.config.IsADOBoard() {
+			m.message = "Syncing with Azure DevOps..."
+		}
 		return m, m.loadTasks
 
 	default:
@@ -560,6 +649,61 @@ func (m Model) handleSearchMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+func (m Model) handlePATManagerMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	pats := m.patStore.PATs
+	switch msg.String() {
+	case "j", "down":
+		m.patSelectorIndex++
+		if m.patSelectorIndex >= len(pats) {
+			m.patSelectorIndex = 0
+		}
+		m.revealedPATIndex = -1
+
+	case "k", "up":
+		m.patSelectorIndex--
+		if m.patSelectorIndex < 0 {
+			m.patSelectorIndex = max(0, len(pats)-1)
+		}
+		m.revealedPATIndex = -1
+
+	case " ":
+		if m.revealedPATIndex == m.patSelectorIndex {
+			m.revealedPATIndex = -1
+		} else {
+			m.revealedPATIndex = m.patSelectorIndex
+		}
+
+	case "a":
+		m.mode = ModeInput
+		m.inputAction = "pat-name"
+		m.textInput.Reset()
+		m.textInput.Placeholder = "PAT name (e.g. myorg)..."
+		m.textInput.EchoMode = textinput.EchoNormal
+		m.textInput.Focus()
+		return m, textinput.Blink
+
+	case "x", "ctrl+d":
+		if m.patSelectorIndex < len(pats) {
+			name := pats[m.patSelectorIndex].Name
+			m.patStore.Delete(name)
+			if err := m.patStore.Save(); err != nil {
+				m.message = "Error saving: " + err.Error()
+			} else {
+				m.message = fmt.Sprintf("PAT %q deleted", name)
+			}
+			if m.patSelectorIndex >= len(m.patStore.PATs) {
+				m.patSelectorIndex = max(0, len(m.patStore.PATs)-1)
+			}
+			m.revealedPATIndex = -1
+		}
+
+	case "esc", "q":
+		m.mode = ModeNormal
+		m.revealedPATIndex = -1
+	}
+	return m, nil
+}
+
 func (m Model) filterTasks(tasks []*task.Task) []*task.Task {
 	if m.searchFilter == "" {
 		return tasks
@@ -569,6 +713,7 @@ func (m Model) filterTasks(tasks []*task.Task) []*task.Task {
 	for _, t := range tasks {
 		if strings.Contains(strings.ToLower(t.Title), filter) {
 			filtered = append(filtered, t)
+			continue
 		}
 		for _, tag := range t.Tags {
 			if strings.Contains(strings.ToLower(tag), filter) {
@@ -660,6 +805,14 @@ func (m Model) handleCommand(cmd string) (tea.Model, tea.Cmd) {
 		}
 		m.message = "Usage: settings dir <path>"
 
+	case "pats", "p":
+		m.patSelectorIndex = 0
+		m.revealedPATIndex = -1
+		m.mode = ModePATManager
+		m.message = ""
+		m.mode = ModePATManager
+		return m, nil
+
 	case "q", "quit":
 		return m, tea.Quit
 
@@ -705,6 +858,10 @@ func (m Model) createTask(title string) (tea.Model, tea.Cmd) {
 	m.mode = ModeNormal
 	lane := m.board.Lanes[m.activeLane]
 
+	if m.config.IsADOBoard() {
+		return m, m.createADOTask(title, lane)
+	}
+
 	return m, func() tea.Msg {
 		t, err := task.CreateNewTask(m.config.TaskDirectory(), title)
 		if err != nil {
@@ -718,11 +875,42 @@ func (m Model) createTask(title string) (tea.Model, tea.Cmd) {
 	}
 }
 
+func (m Model) createADOTask(title string, lane task.Status) tea.Cmd {
+	adoCfg := m.config.ActiveBoard().AzureDevOps
+	return func() tea.Msg {
+		token, ok := m.patStore.Get(adoCfg.PAT)
+		if !ok {
+			return errMsg{fmt.Errorf("PAT %q not found — run :pats to add it", adoCfg.PAT)}
+		}
+		t, err := azuredevops.CreateRemoteTask(adoCfg, token, title, lane)
+		if err != nil {
+			return errMsg{err}
+		}
+		return taskSavedMsg{t}
+	}
+}
+
 func (m Model) editTask(title string) (tea.Model, tea.Cmd) {
 	m.mode = ModeNormal
 	t := m.selectedTask()
 	if t == nil {
 		return m, nil
+	}
+
+	if m.config.IsADOBoard() {
+		adoCfg := m.config.ActiveBoard().AzureDevOps
+		snapshot := t
+		return m, func() tea.Msg {
+			token, ok := m.patStore.Get(adoCfg.PAT)
+			if !ok {
+				return errMsg{fmt.Errorf("PAT %q not found — run :pats to add it", adoCfg.PAT)}
+			}
+			if err := azuredevops.UpdateRemoteTitle(adoCfg, token, snapshot, title); err != nil {
+				return errMsg{err}
+			}
+			snapshot.Title = title
+			return taskSavedMsg{snapshot}
+		}
 	}
 
 	return m, func() tea.Msg {
@@ -736,6 +924,10 @@ func (m Model) editTask(title string) (tea.Model, tea.Cmd) {
 
 func (m Model) deleteTask() (tea.Model, tea.Cmd) {
 	m.mode = ModeNormal
+	if m.config.IsADOBoard() {
+		m.message = "Use Azure DevOps to delete work items"
+		return m, nil
+	}
 	t := m.selectedTask()
 	if t == nil {
 		return m, nil
@@ -799,6 +991,10 @@ func (m Model) moveTaskLeft() (tea.Model, tea.Cmd) {
 	m.board.MoveTask(t, newLane)
 	m.activeLane--
 
+	if m.config.IsADOBoard() {
+		return m, m.pushADOStateChange(t, newLane)
+	}
+
 	return m, func() tea.Msg {
 		if err := task.WriteMarkdownFile(t); err != nil {
 			return errMsg{err}
@@ -817,11 +1013,30 @@ func (m Model) moveTaskRight() (tea.Model, tea.Cmd) {
 	m.board.MoveTask(t, newLane)
 	m.activeLane++
 
+	if m.config.IsADOBoard() {
+		return m, m.pushADOStateChange(t, newLane)
+	}
+
 	return m, func() tea.Msg {
 		if err := task.WriteMarkdownFile(t); err != nil {
 			return errMsg{err}
 		}
 		return taskSavedMsg{t}
+	}
+}
+
+func (m Model) pushADOStateChange(t *task.Task, newLane task.Status) tea.Cmd {
+	adoCfg := m.config.ActiveBoard().AzureDevOps
+	snapshot := t
+	return func() tea.Msg {
+		token, ok := m.patStore.Get(adoCfg.PAT)
+		if !ok {
+			return errMsg{fmt.Errorf("PAT %q not found — run :pats to add it", adoCfg.PAT)}
+		}
+		if err := azuredevops.PushStateChange(adoCfg, token, snapshot, newLane); err != nil {
+			return errMsg{err}
+		}
+		return adoStateUpdatedMsg{}
 	}
 }
 
@@ -848,6 +1063,10 @@ func (m Model) toggleTaskDone() (tea.Model, tea.Cmd) {
 	}
 	m.clampSelection()
 
+	if m.config.IsADOBoard() {
+		return m, m.pushADOStateChange(t, newStatus)
+	}
+
 	return m, func() tea.Msg {
 		if err := task.WriteMarkdownFile(t); err != nil {
 			return errMsg{err}
@@ -857,6 +1076,11 @@ func (m Model) toggleTaskDone() (tea.Model, tea.Cmd) {
 }
 
 func (m Model) reorderTask(delta int) (tea.Model, tea.Cmd) {
+	if m.config.IsADOBoard() {
+		m.message = "Reordering is not supported for Azure DevOps boards"
+		return m, nil
+	}
+
 	t := m.selectedTask()
 	if t == nil {
 		return m, nil
@@ -988,6 +1212,8 @@ func (m Model) renderHeader() string {
 		modeStr = "[SEARCH]"
 	case ModeBoardSelector:
 		modeStr = "[BOARDS]"
+	case ModePATManager:
+		modeStr = "[PATS]"
 	default:
 		modeStr = "[NORMAL]"
 	}
@@ -999,11 +1225,24 @@ func (m Model) renderHeader() string {
 
 	boardName := ""
 	if board := m.config.ActiveBoard(); board != nil {
-		boardName = lipgloss.NewStyle().Foreground(HighlightColor).Render(" [" + board.Name + "]")
+		name := board.Name
+		if board.Type == config.BoardTypeAzureDevOps {
+			name += " [ADO]"
+		}
+		boardName = lipgloss.NewStyle().Foreground(HighlightColor).Render(" [" + name + "]")
 	}
-	dir := StatusBarStyle.Render("📁 " + m.config.TaskDirectory())
 
-	header := lipgloss.JoinHorizontal(lipgloss.Center, title, boardName, "  ", mode, "  ", dir)
+	var statusPart string
+	if m.config.IsADOBoard() {
+		if !m.lastSyncTime.IsZero() {
+			elapsed := time.Since(m.lastSyncTime).Round(time.Second)
+			statusPart = lipgloss.NewStyle().Foreground(SubtleColor).Render(fmt.Sprintf("  synced %s ago", elapsed))
+		}
+	} else {
+		statusPart = StatusBarStyle.Render("📁 " + m.config.TaskDirectory())
+	}
+
+	header := lipgloss.JoinHorizontal(lipgloss.Center, title, boardName, "  ", mode, statusPart)
 	return header
 }
 
@@ -1018,6 +1257,10 @@ func (m Model) renderBoard() string {
 
 	if m.mode == ModeBoardSelector {
 		return m.renderBoardSelector()
+	}
+
+	if m.mode == ModePATManager {
+		return m.renderPATManager()
 	}
 
 	laneWidth := GetLaneWidth(m.width, len(m.board.Lanes))
@@ -1106,6 +1349,11 @@ func (m Model) renderTask(t *task.Task, selected bool, width int) string {
 		prefix = "✓ "
 	}
 
+	adoBadge := ""
+	if t.ADOItemID > 0 {
+		adoBadge = lipgloss.NewStyle().Foreground(SubtleColor).Render(fmt.Sprintf(" #%d", t.ADOItemID))
+	}
+
 	title := prefix + t.Title
 	if len(title) > width-2 {
 		title = title[:width-5] + "..."
@@ -1129,7 +1377,7 @@ func (m Model) renderTask(t *task.Task, selected bool, width int) string {
 			Render(fmt.Sprintf(" %d/%d", t.CheckboxDone, t.CheckboxTotal))
 	}
 
-	return style.Width(width).Render(title + tags + checkboxCounter)
+	return style.Width(width).Render(title + adoBadge + tags + checkboxCounter)
 }
 
 func (m Model) renderFooter() string {
@@ -1186,6 +1434,10 @@ func (m Model) renderTaskDetail() string {
 	t := m.selectedTask()
 	if t == nil {
 		return "No task selected"
+	}
+
+	if t.ADOItemID > 0 {
+		return m.renderADOTaskDetail(t)
 	}
 
 	m.mdRenderer.SetWidth(m.width - 8)
@@ -1250,6 +1502,62 @@ func (m Model) renderTaskDetail() string {
 	)
 }
 
+func (m Model) renderADOTaskDetail(t *task.Task) string {
+	availableHeight := m.height - 8
+
+	heading := lipgloss.NewStyle().Bold(true).Foreground(HighlightColor).
+		Render(fmt.Sprintf("#%d  %s", t.ADOItemID, t.Title))
+
+	separator := lipgloss.NewStyle().Foreground(SubtleColor).
+		Render(strings.Repeat("─", m.width-8))
+
+	var metaParts []string
+	metaParts = append(metaParts, "Status: "+string(t.Status))
+	if len(t.Tags) > 0 {
+		metaParts = append(metaParts, "Tags: "+strings.Join(t.Tags, ", "))
+	}
+	meta := lipgloss.NewStyle().Foreground(SubtleColor).Render(strings.Join(metaParts, "  ·  "))
+
+	desc := t.Description
+	if desc == "" {
+		desc = lipgloss.NewStyle().Foreground(SubtleColor).Italic(true).Render("(no description)")
+	}
+
+	lines := strings.Split(desc, "\n")
+	if m.viewScroll >= len(lines) {
+		m.viewScroll = len(lines) - 1
+	}
+	if m.viewScroll < 0 {
+		m.viewScroll = 0
+	}
+	end := m.viewScroll + availableHeight - 6
+	if end > len(lines) {
+		end = len(lines)
+	}
+	visibleDesc := strings.Join(lines[m.viewScroll:end], "\n")
+
+	footer := lipgloss.NewStyle().Foreground(SubtleColor).
+		Render("[q: back  H/L: move lane  e: edit title  j/k: scroll]")
+
+	detailStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(ActiveColor).
+		Padding(1, 2).
+		Width(m.width - 4).
+		Height(availableHeight + 2)
+
+	return detailStyle.Render(
+		lipgloss.JoinVertical(lipgloss.Left,
+			heading,
+			meta,
+			separator,
+			visibleDesc,
+			separator,
+			footer,
+		),
+	)
+}
+
 func (m Model) renderHelp() string {
 	help := `
   NAVIGATION                    ACTIONS
@@ -1269,7 +1577,7 @@ func (m Model) renderHelp() string {
   ?        toggle help          :       command mode
   r        refresh              :q      quit
   q        quit                 :b      board switcher
-  ctrl+b   board switcher
+  ctrl+b   board switcher       :pats   PAT manager
 
   Press ? or ESC to close help
 `
@@ -1307,6 +1615,7 @@ func (m Model) handleBoardSelectorMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.inputAction = "new-board-name"
 		m.textInput.Reset()
 		m.textInput.Placeholder = "Board name..."
+		m.textInput.EchoMode = textinput.EchoNormal
 		m.textInput.Focus()
 		return m, textinput.Blink
 	case "esc", "q":
@@ -1339,7 +1648,11 @@ func (m Model) switchBoard(name string) (tea.Model, tea.Cmd) {
 	m.activeLane = 0
 	m.activeTask = 0
 	m.mode = ModeNormal
+	m.lastSyncTime = time.Time{}
 	m.message = "Switched to board: " + name
+	if m.config.IsADOBoard() {
+		m.message = "Switched to board: " + name + " — syncing..."
+	}
 	return m, m.loadTasks
 }
 
@@ -1373,17 +1686,94 @@ func (m Model) renderBoardSelector() string {
 			activeMark = lipgloss.NewStyle().Foreground(SuccessColor).Render(" ✓")
 		}
 
-		dir := lipgloss.NewStyle().Foreground(SubtleColor).Render("  " + b.Directory)
-		row := cursor + nameStyle.Render(b.Name) + activeMark + "\n" + dir
+		adoBadge := ""
+		if b.Type == config.BoardTypeAzureDevOps {
+			adoBadge = lipgloss.NewStyle().Foreground(HighlightColor).Render(" [ADO]")
+		}
+
+		dir := ""
+		if b.Type != config.BoardTypeAzureDevOps && b.Directory != "" {
+			dir = lipgloss.NewStyle().Foreground(SubtleColor).Render("  " + b.Directory)
+		} else if b.Type == config.BoardTypeAzureDevOps && b.AzureDevOps != nil {
+			dir = lipgloss.NewStyle().Foreground(SubtleColor).Render(
+				fmt.Sprintf("  %s / %s / %s", b.AzureDevOps.Org, b.AzureDevOps.Project, b.AzureDevOps.Team),
+			)
+		}
+
+		row := cursor + nameStyle.Render(b.Name) + adoBadge + activeMark + "\n" + dir
 		rows = append(rows, row)
 	}
 
 	content := lipgloss.JoinVertical(lipgloss.Left, rows...)
-	return DialogStyle.Width(50).Render(content)
+	return DialogStyle.Width(60).Render(content)
+}
+
+func (m Model) renderPATManager() string {
+	pats := m.patStore.PATs
+
+	var rows []string
+	rows = append(rows, lipgloss.NewStyle().Bold(true).Foreground(HighlightColor).Render("  PAT Manager  "))
+	rows = append(rows, lipgloss.NewStyle().Foreground(SubtleColor).Render(
+		"  j/k: navigate  a: add  x: delete  space: reveal  esc: close",
+	))
+	rows = append(rows, "")
+
+	if len(pats) == 0 {
+		rows = append(rows, lipgloss.NewStyle().Foreground(SubtleColor).Italic(true).Render("  No PATs stored yet. Press 'a' to add one."))
+	}
+
+	for i, p := range pats {
+		cursor := "  "
+		if i == m.patSelectorIndex {
+			cursor = "▶ "
+		}
+
+		nameStyle := lipgloss.NewStyle()
+		if i == m.patSelectorIndex {
+			nameStyle = nameStyle.Foreground(lipgloss.Color("#FFFFFF")).Background(ActiveColor).Bold(true)
+		}
+
+		var tokenDisplay string
+		if i == m.revealedPATIndex {
+			tokenDisplay = lipgloss.NewStyle().Foreground(WarningColor).Render(p.Token)
+		} else {
+			masked := maskToken(p.Token)
+			tokenDisplay = lipgloss.NewStyle().Foreground(SubtleColor).Render(masked)
+		}
+
+		row := cursor + nameStyle.Render(fmt.Sprintf("%-20s", p.Name)) + "  " + tokenDisplay
+		rows = append(rows, row)
+	}
+
+	rows = append(rows, "")
+	rows = append(rows, lipgloss.NewStyle().Foreground(SubtleColor).Render(
+		fmt.Sprintf("  Stored in %s (0600)", pat.DefaultStorePath()),
+	))
+
+	if m.message != "" {
+		rows = append(rows, lipgloss.NewStyle().Foreground(SuccessColor).Render("  "+m.message))
+	}
+
+	content := lipgloss.JoinVertical(lipgloss.Left, rows...)
+	return DialogStyle.Width(70).Render(content)
+}
+
+func maskToken(token string) string {
+	if len(token) <= 8 {
+		return strings.Repeat("•", len(token))
+	}
+	return token[:4] + strings.Repeat("•", 12) + token[len(token)-4:]
 }
 
 func min(a, b int) int {
 	if a < b {
+		return a
+	}
+	return b
+}
+
+func max(a, b int) int {
+	if a > b {
 		return a
 	}
 	return b

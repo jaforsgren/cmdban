@@ -160,5 +160,13 @@ func (c *Config) Save() error {
 }
 
 func (c *Config) EnsureTaskDirectory() error {
+	if board := c.ActiveBoard(); board != nil && board.Type == BoardTypeAzureDevOps {
+		return nil
+	}
 	return os.MkdirAll(c.TaskDirectory(), 0755)
+}
+
+func (c *Config) IsADOBoard() bool {
+	board := c.ActiveBoard()
+	return board != nil && board.Type == BoardTypeAzureDevOps && board.AzureDevOps != nil
 }

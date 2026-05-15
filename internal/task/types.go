@@ -30,6 +30,7 @@ type Task struct {
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
 	FilePath      string
+	ADOItemID     int
 }
 
 type Board struct {

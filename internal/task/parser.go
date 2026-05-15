@@ -99,6 +99,9 @@ func parseFooter(task *Task, footer string) {
 }
 
 func WriteMarkdownFile(task *Task) error {
+	if task.FilePath == "" {
+		return nil
+	}
 	var sb strings.Builder
 
 	sb.WriteString("# ")

@@ -1,14 +1,33 @@
 package config
 
+type BoardType string
+
+const (
+	BoardTypeLocal       BoardType = "local"
+	BoardTypeAzureDevOps BoardType = "azuredevops"
+)
+
+type AzureDevOpsConfig struct {
+	Org                 string            `yaml:"org"`
+	Project             string            `yaml:"project"`
+	Team                string            `yaml:"team"`
+	Iteration           string            `yaml:"iteration"`
+	PAT                 string            `yaml:"pat"`
+	ColumnMap           map[string]string `yaml:"column_map"`
+	DefaultWorkItemType string            `yaml:"default_work_item_type,omitempty"`
+}
+
 type Column struct {
 	Name   string `yaml:"name"`
 	Hidden bool   `yaml:"hidden"`
 }
 
 type Board struct {
-	Name      string   `yaml:"name"`
-	Directory string   `yaml:"directory"`
-	Columns   []Column `yaml:"columns"`
+	Name        string             `yaml:"name"`
+	Directory   string             `yaml:"directory,omitempty"`
+	Type        BoardType          `yaml:"type,omitempty"`
+	AzureDevOps *AzureDevOpsConfig `yaml:"azuredevops,omitempty"`
+	Columns     []Column           `yaml:"columns"`
 }
 
 type Config struct {
