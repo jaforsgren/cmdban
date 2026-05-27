@@ -31,9 +31,7 @@ type KeyMap struct {
 	OpenEditor key.Binding
 	Tag        key.Binding
 	Boards         key.Binding
-	CollapseColumn    key.Binding
-	HideColumn        key.Binding
-	UnhideAllColumns  key.Binding
+	CollapseColumn key.Binding
 }
 
 var DefaultKeyMap = KeyMap{
@@ -70,8 +68,8 @@ var DefaultKeyMap = KeyMap{
 		key.WithHelp("ctrl+f", "half page down"),
 	),
 	MoveLeft: key.NewBinding(
-		key.WithKeys("H", "ctrl+left"),
-		key.WithHelp("H", "move task left"),
+		key.WithKeys("H", "ctrl+left", "ctrl+h"),
+		key.WithHelp("H/ctrl+h", "move task left"),
 	),
 	MoveRight: key.NewBinding(
 		key.WithKeys("L", "ctrl+right", "ctrl+l"),
@@ -153,14 +151,6 @@ var DefaultKeyMap = KeyMap{
 		key.WithKeys("."),
 		key.WithHelp(".", "minimize column"),
 	),
-	HideColumn: key.NewBinding(
-		key.WithKeys("ctrl+h"),
-		key.WithHelp("ctrl+h", "hide column"),
-	),
-	UnhideAllColumns: key.NewBinding(
-		key.WithKeys("ctrl+H"),
-		key.WithHelp("ctrl+H", "unhide all columns"),
-	),
 }
 
 func (k KeyMap) ShortHelp() []key.Binding {
@@ -174,7 +164,6 @@ func (k KeyMap) FullHelp() [][]key.Binding {
 		{k.MoveLeft, k.MoveRight, k.OrderUp, k.OrderDown},
 		{k.New, k.Edit, k.ToggleDone, k.Delete},
 		{k.Mark, k.Tag, k.Search, k.Filter, k.Refresh},
-		{k.Settings, k.Help, k.Quit, k.Boards},
-		{k.CollapseColumn, k.HideColumn, k.UnhideAllColumns},
+		{k.Settings, k.Help, k.Quit, k.Boards, k.CollapseColumn},
 	}
 }
