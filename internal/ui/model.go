@@ -65,6 +65,7 @@ type Model struct {
 	revealedPATIndex   int
 	lastSyncTime       time.Time
 	adoSetup           adoSetupState
+	minimizedLanes     map[task.Status]bool
 }
 
 type tasksLoadedMsg struct {
@@ -118,6 +119,7 @@ func NewModel(cfg *config.Config) Model {
 		activeTask:       0,
 		mode:             ModeNormal,
 		revealedPATIndex: -1,
+		minimizedLanes:   make(map[task.Status]bool),
 	}
 }
 
@@ -440,6 +442,12 @@ func (m Model) handleNormalMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.viewScroll = 0
 			m.gPressed = false
 		}
+		return m, nil
+
+	case key.Matches(msg, m.keys.CollapseColumn):
+		lane := m.board.Lanes[m.activeLane]
+		m.minimizedLanes[lane] = !m.minimizedLanes[lane]
+		m.gPressed = false
 		return m, nil
 
 	default:
@@ -1330,21 +1338,60 @@ func (m Model) renderBoard() string {
 		return m.renderADOSetup()
 	}
 
-	laneWidth := GetLaneWidth(m.width, len(m.board.Lanes))
-	if laneWidth < 20 {
-		laneWidth = 20
-	}
+	laneWidths := m.computeLaneWidths()
 
 	var lanes []string
 	for i, status := range m.board.Lanes {
-		lanes = append(lanes, m.renderLane(i, status, laneWidth))
+		minimized := m.minimizedLanes[status]
+		lanes = append(lanes, m.renderLane(i, status, laneWidths[i], minimized))
 	}
 
 	board := lipgloss.JoinHorizontal(lipgloss.Top, lanes...)
 	return board
 }
 
-func (m Model) renderLane(index int, status task.Status, width int) string {
+func (m Model) computeLaneWidths() []int {
+	const laneOverhead = 4 // border(2) + padding(2) per lane
+	widths := make([]int, len(m.board.Lanes))
+
+	minimizedOuterTotal := 0
+	for i, status := range m.board.Lanes {
+		if m.minimizedLanes[status] {
+			statusName := strings.ToUpper(string(status))
+			// width - 4 must be >= len(statusName), so width = len(statusName) + 4
+			w := len(statusName) + 4
+			widths[i] = w
+			minimizedOuterTotal += w + laneOverhead
+		}
+	}
+
+	nonMinimizedCount := 0
+	for _, status := range m.board.Lanes {
+		if !m.minimizedLanes[status] {
+			nonMinimizedCount++
+		}
+	}
+
+	if nonMinimizedCount == 0 {
+		return widths
+	}
+
+	remainingWidth := m.width - minimizedOuterTotal
+	normalWidth := GetLaneWidth(remainingWidth, nonMinimizedCount)
+	if normalWidth < 20 {
+		normalWidth = 20
+	}
+
+	for i, status := range m.board.Lanes {
+		if !m.minimizedLanes[status] {
+			widths[i] = normalWidth
+		}
+	}
+
+	return widths
+}
+
+func (m Model) renderLane(index int, status task.Status, width int, minimized bool) string {
 	isActive := index == m.activeLane
 	allTasks := m.board.Tasks[status]
 	tasks := m.filterTasks(allTasks)
@@ -1358,6 +1405,18 @@ func (m Model) renderLane(index int, status task.Status, width int) string {
 
 	statusName := strings.ToUpper(string(status))
 	count := len(tasks)
+
+	// 2 for lane border (top+bottom), 2 for app header+footer (conservative)
+	availableHeight := m.height - 4
+	if availableHeight < 5 {
+		availableHeight = 5
+	}
+
+	if minimized {
+		header := headerStyle.Width(width - 4).Render(statusName)
+		return laneStyle.Width(width).Height(availableHeight).Render(header)
+	}
+
 	header := headerStyle.Width(width - 4).Render(
 		lipgloss.JoinHorizontal(lipgloss.Left,
 			statusName,
@@ -1365,12 +1424,6 @@ func (m Model) renderLane(index int, status task.Status, width int) string {
 				" ("+strings.Repeat("●", min(count, 10))+")"),
 		),
 	)
-
-	// 2 for lane border (top+bottom), 2 for app header+footer (conservative)
-	availableHeight := m.height - 4
-	if availableHeight < 5 {
-		availableHeight = 5
-	}
 
 	headerHeight := lipgloss.Height(header)
 	// Reserve 2 lines for the ▲/▼ scroll indicators so they never push content over budget.
@@ -1789,6 +1842,7 @@ func (m Model) switchBoard(name string) (tea.Model, tea.Cmd) {
 	m.activeTask = 0
 	m.mode = ModeNormal
 	m.lastSyncTime = time.Time{}
+	m.minimizedLanes = make(map[task.Status]bool)
 	m.message = "Switched to board: " + name
 	if m.config.IsADOBoard() {
 		m.message = "Switched to board: " + name + " — syncing..."

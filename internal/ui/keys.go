@@ -30,7 +30,8 @@ type KeyMap struct {
 	Refresh    key.Binding
 	OpenEditor key.Binding
 	Tag        key.Binding
-	Boards     key.Binding
+	Boards         key.Binding
+	CollapseColumn key.Binding
 }
 
 var DefaultKeyMap = KeyMap{
@@ -146,6 +147,10 @@ var DefaultKeyMap = KeyMap{
 		key.WithKeys("ctrl+b"),
 		key.WithHelp("ctrl+b", "board switcher"),
 	),
+	CollapseColumn: key.NewBinding(
+		key.WithKeys("."),
+		key.WithHelp(".", "minimize column"),
+	),
 }
 
 func (k KeyMap) ShortHelp() []key.Binding {
@@ -159,6 +164,6 @@ func (k KeyMap) FullHelp() [][]key.Binding {
 		{k.MoveLeft, k.MoveRight, k.OrderUp, k.OrderDown},
 		{k.New, k.Edit, k.ToggleDone, k.Delete},
 		{k.Mark, k.Tag, k.Search, k.Filter, k.Refresh},
-		{k.Settings, k.Help, k.Quit, k.Boards},
+		{k.Settings, k.Help, k.Quit, k.Boards, k.CollapseColumn},
 	}
 }
