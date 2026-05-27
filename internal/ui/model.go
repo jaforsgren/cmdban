@@ -450,6 +450,14 @@ func (m Model) handleNormalMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.gPressed = false
 		return m, nil
 
+	case key.Matches(msg, m.keys.HideColumn):
+		m.gPressed = false
+		return m.hideActiveLane()
+
+	case key.Matches(msg, m.keys.UnhideAllColumns):
+		m.gPressed = false
+		return m.unhideAllColumns()
+
 	default:
 		m.gPressed = false
 	}
@@ -1348,6 +1356,66 @@ func (m Model) renderBoard() string {
 
 	board := lipgloss.JoinHorizontal(lipgloss.Top, lanes...)
 	return board
+}
+
+func (m Model) hideActiveLane() (tea.Model, tea.Cmd) {
+	if len(m.board.Lanes) <= 1 {
+		m.message = "Cannot hide the only visible column"
+		return m, nil
+	}
+
+	lane := m.board.Lanes[m.activeLane]
+	board := m.config.ActiveBoard()
+	if board == nil {
+		return m, nil
+	}
+
+	for i := range board.Columns {
+		if strings.EqualFold(board.Columns[i].Name, string(lane)) {
+			board.Columns[i].Hidden = true
+			break
+		}
+	}
+
+	if err := m.config.Save(); err != nil {
+		m.message = "Error saving config: " + err.Error()
+		return m, nil
+	}
+
+	m.activeLane = 0
+	m.activeTask = 0
+	m.message = fmt.Sprintf("Column %q hidden (ctrl+H to show all)", strings.ToUpper(string(lane)))
+	return m, m.loadTasks
+}
+
+func (m Model) unhideAllColumns() (tea.Model, tea.Cmd) {
+	board := m.config.ActiveBoard()
+	if board == nil {
+		return m, nil
+	}
+
+	anyHidden := false
+	for i := range board.Columns {
+		if board.Columns[i].Hidden {
+			board.Columns[i].Hidden = false
+			anyHidden = true
+		}
+	}
+
+	if !anyHidden {
+		m.message = "No hidden columns"
+		return m, nil
+	}
+
+	if err := m.config.Save(); err != nil {
+		m.message = "Error saving config: " + err.Error()
+		return m, nil
+	}
+
+	m.activeLane = 0
+	m.activeTask = 0
+	m.message = "All columns shown"
+	return m, m.loadTasks
 }
 
 func (m Model) computeLaneWidths() []int {
