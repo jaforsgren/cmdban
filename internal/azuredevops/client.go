@@ -50,13 +50,28 @@ func (c *Client) teamURL() string {
 	return fmt.Sprintf("%s/%s", c.baseURL(), url.PathEscape(c.team))
 }
 
-func (c *Client) get(url string, out any) error {
-	req, err := http.NewRequest(http.MethodGet, url, nil)
+// do executes an HTTP request against the ADO API and decodes the JSON
+// response into out. A nil payload sends no body; a nil out skips decoding
+// the response (used for writes that don't return anything useful).
+func (c *Client) do(method, url, contentType string, payload, out any) error {
+	var body io.Reader
+	if payload != nil {
+		data, err := json.Marshal(payload)
+		if err != nil {
+			return err
+		}
+		body = bytes.NewReader(data)
+	}
+
+	req, err := http.NewRequest(method, url, body)
 	if err != nil {
 		return err
 	}
 	req.Header.Set("Authorization", c.authHeader())
 	req.Header.Set("Accept", "application/json")
+	if contentType != "" {
+		req.Header.Set("Content-Type", contentType)
+	}
 
 	resp, err := c.http.Do(req)
 	if err != nil {
@@ -64,83 +79,31 @@ func (c *Client) get(url string, out any) error {
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return err
 	}
 
 	if resp.StatusCode >= 400 {
-		return fmt.Errorf("ADO %d: %s", resp.StatusCode, truncate(string(body), 200))
+		return fmt.Errorf("ADO %d: %s", resp.StatusCode, truncate(string(respBody), 200))
 	}
 
-	return json.Unmarshal(body, out)
+	if out == nil {
+		return nil
+	}
+	return json.Unmarshal(respBody, out)
+}
+
+func (c *Client) get(url string, out any) error {
+	return c.do(http.MethodGet, url, "", nil, out)
 }
 
 func (c *Client) post(url string, payload, out any) error {
-	data, err := json.Marshal(payload)
-	if err != nil {
-		return err
-	}
-
-	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(data))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Authorization", c.authHeader())
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return err
-	}
-
-	if resp.StatusCode >= 400 {
-		return fmt.Errorf("ADO %d: %s", resp.StatusCode, truncate(string(body), 200))
-	}
-
-	return json.Unmarshal(body, out)
+	return c.do(http.MethodPost, url, "application/json", payload, out)
 }
 
 func (c *Client) patchJSON(url, contentType string, payload, out any) error {
-	data, err := json.Marshal(payload)
-	if err != nil {
-		return err
-	}
-
-	req, err := http.NewRequest(http.MethodPatch, url, bytes.NewReader(data))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Authorization", c.authHeader())
-	req.Header.Set("Content-Type", contentType)
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return err
-	}
-
-	if resp.StatusCode >= 400 {
-		return fmt.Errorf("ADO %d: %s", resp.StatusCode, truncate(string(body), 200))
-	}
-
-	if out != nil {
-		return json.Unmarshal(body, out)
-	}
-	return nil
+	return c.do(http.MethodPatch, url, contentType, payload, out)
 }
 
 func (c *Client) ListIterations() ([]Iteration, error) {

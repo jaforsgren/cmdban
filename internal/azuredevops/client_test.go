@@ -2,6 +2,8 @@ package azuredevops
 
 import (
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"reflect"
 	"testing"
@@ -58,6 +60,59 @@ func TestBaseURLEscapesStayValidWhenParsed(t *testing.T) {
 	}
 	if parsed.RawQuery != "api-version=7.0" {
 		t.Fatalf("parsed.RawQuery = %q, want only the real query string", parsed.RawQuery)
+	}
+}
+
+func TestClientGetDecodesSuccessResponse(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Accept"); got != "application/json" {
+			t.Errorf("Accept header = %q, want application/json", got)
+		}
+		w.Write([]byte(`{"count":1,"value":[{"id":"1","name":"Team A"}]}`))
+	}))
+	defer srv.Close()
+
+	c := NewClient("org", "proj", "team", "pat")
+	var resp TeamListResponse
+	if err := c.get(srv.URL, &resp); err != nil {
+		t.Fatalf("get() error = %v", err)
+	}
+	if len(resp.Value) != 1 || resp.Value[0].Name != "Team A" {
+		t.Fatalf("resp = %+v, want one team named Team A", resp)
+	}
+}
+
+func TestClientGetReturnsErrorOnHTTPFailure(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte(`{"message":"not found"}`))
+	}))
+	defer srv.Close()
+
+	c := NewClient("org", "proj", "team", "pat")
+	var resp TeamListResponse
+	err := c.get(srv.URL, &resp)
+	if err == nil {
+		t.Fatal("get() error = nil, want an error for a 404 response")
+	}
+}
+
+func TestClientPatchJSONSkipsDecodeWhenOutIsNil(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPatch {
+			t.Errorf("method = %q, want PATCH", r.Method)
+		}
+		if got := r.Header.Get("Content-Type"); got != "application/json-patch+json" {
+			t.Errorf("Content-Type header = %q, want application/json-patch+json", got)
+		}
+		w.Write([]byte("not valid json, but out is nil so this must not be parsed"))
+	}))
+	defer srv.Close()
+
+	c := NewClient("org", "proj", "team", "pat")
+	ops := []PatchOperation{{Op: "add", Path: "/fields/System.Title", Value: "x"}}
+	if err := c.patchJSON(srv.URL, "application/json-patch+json", ops, nil); err != nil {
+		t.Fatalf("patchJSON() error = %v", err)
 	}
 }
 
