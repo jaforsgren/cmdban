@@ -273,6 +273,22 @@ func UpdateRemoteTitle(adoCfg *config.AzureDevOpsConfig, pat string, t *task.Tas
 	return client.UpdateWorkItemTitle(t.ADOItemID, title)
 }
 
+// UpdateRemoteTitleAndDescription pushes an edited title and plain-text
+// description back to the work item, htmlizing the description since ADO
+// stores it as HTML (mirrors stripHTML on the read side).
+func UpdateRemoteTitleAndDescription(adoCfg *config.AzureDevOpsConfig, pat string, t *task.Task, title, description string) error {
+	if t.ADOItemID == 0 {
+		return fmt.Errorf("task %q has no ADO item ID", t.ID)
+	}
+	client := NewClient(adoCfg.Org, adoCfg.Project, adoCfg.Team, pat)
+	return client.UpdateWorkItemTitleAndDescription(t.ADOItemID, title, htmlizeText(description))
+}
+
+func htmlizeText(s string) string {
+	escaped := html.EscapeString(s)
+	return strings.ReplaceAll(escaped, "\n", "<br>\n")
+}
+
 func CreateRemoteTask(adoCfg *config.AzureDevOpsConfig, pat string, title string, lane task.Status) (*task.Task, error) {
 	client := NewClient(adoCfg.Org, adoCfg.Project, adoCfg.Team, pat)
 

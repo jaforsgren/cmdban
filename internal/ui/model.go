@@ -102,6 +102,12 @@ type editorFinishedMsg struct {
 	filePath string
 }
 
+type adoEditorFinishedMsg struct {
+	tempPath string
+	task     *task.Task
+	execErr  error
+}
+
 type configEditorFinishedMsg struct{}
 
 type commentsLoadedMsg struct {
@@ -246,6 +252,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case editorFinishedMsg:
 		return m, m.loadTasks
+
+	case adoEditorFinishedMsg:
+		return m.handleADOEditorFinished(msg)
 
 	case configEditorFinishedMsg:
 		return m.reloadConfig()
@@ -692,8 +701,7 @@ func (m Model) handleViewMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		t := m.selectedTask()
 		if t != nil {
 			if m.config.IsADOBoard() {
-				m.message = "No local file for Azure DevOps work items"
-				return m, nil
+				return m.openADOEditor(t)
 			}
 			return m, m.openInEditor(t.FilePath)
 		}
@@ -1085,6 +1093,104 @@ func (m Model) openInEditor(filePath string) tea.Cmd {
 	return tea.ExecProcess(c, func(err error) tea.Msg {
 		return editorFinishedMsg{filePath: filePath}
 	})
+}
+
+// openADOEditor writes a work item's title and description to a temp
+// markdown file and opens it in $EDITOR, mirroring the local-board editor
+// flow. There is no local file to edit in place, so the result is read back
+// and pushed to Azure DevOps once the editor exits.
+func (m Model) openADOEditor(t *task.Task) (tea.Model, tea.Cmd) {
+	tmpPath, err := writeADOEditTempFile(t)
+	if err != nil {
+		m.message = "Error creating temp file: " + err.Error()
+		m.logs.Error(m.message)
+		return m, nil
+	}
+
+	editor := os.Getenv("EDITOR")
+	if editor == "" {
+		editor = "nvim"
+	}
+
+	c := exec.Command(editor, tmpPath)
+	return m, tea.ExecProcess(c, func(err error) tea.Msg {
+		return adoEditorFinishedMsg{tempPath: tmpPath, task: t, execErr: err}
+	})
+}
+
+func writeADOEditTempFile(t *task.Task) (string, error) {
+	f, err := os.CreateTemp("", fmt.Sprintf("cmdban-ado-%d-*.md", t.ADOItemID))
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+
+	content := "# " + t.Title + "\n\n" + t.Description + "\n"
+	if _, err := f.WriteString(content); err != nil {
+		os.Remove(f.Name())
+		return "", err
+	}
+	return f.Name(), nil
+}
+
+func readADOEditTempFile(path string) (title, description string, err error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", "", err
+	}
+
+	lines := strings.Split(string(data), "\n")
+	if len(lines) > 0 && strings.HasPrefix(lines[0], "# ") {
+		title = strings.TrimPrefix(lines[0], "# ")
+		lines = lines[1:]
+	}
+	description = strings.TrimSpace(strings.Join(lines, "\n"))
+	return title, description, nil
+}
+
+func (m Model) handleADOEditorFinished(msg adoEditorFinishedMsg) (tea.Model, tea.Cmd) {
+	defer os.Remove(msg.tempPath)
+
+	if msg.execErr != nil {
+		m.message = "Editor error: " + msg.execErr.Error()
+		m.logs.Error(m.message)
+		return m, nil
+	}
+
+	title, description, err := readADOEditTempFile(msg.tempPath)
+	if err != nil {
+		m.message = "Error reading temp file: " + err.Error()
+		m.logs.Error(m.message)
+		return m, nil
+	}
+
+	title = strings.TrimSpace(title)
+	if title == "" {
+		m.message = "Title cannot be empty; edit discarded"
+		return m, nil
+	}
+
+	if title == msg.task.Title && description == msg.task.Description {
+		return m, nil
+	}
+
+	return m, m.pushADOWorkItemEdit(msg.task, title, description)
+}
+
+func (m Model) pushADOWorkItemEdit(t *task.Task, title, description string) tea.Cmd {
+	adoCfg := m.config.ActiveBoard().AzureDevOps
+	return func() tea.Msg {
+		token, ok := m.patStore.Get(adoCfg.PAT)
+		if !ok {
+			return errMsg{fmt.Errorf("PAT %q not found — run :pats to add it", adoCfg.PAT)}
+		}
+		if err := azuredevops.UpdateRemoteTitleAndDescription(adoCfg, token, t, title, description); err != nil {
+			return errMsg{err}
+		}
+		t.Title = title
+		t.Description = description
+		return taskSavedMsg{t}
+	}
 }
 
 func (m Model) openTaskURL() (tea.Model, tea.Cmd) {

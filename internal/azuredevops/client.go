@@ -342,6 +342,15 @@ func (c *Client) UpdateWorkItemTitle(id int, title string) error {
 	return c.patchJSON(url, "application/json-patch+json", ops, nil)
 }
 
+func (c *Client) UpdateWorkItemTitleAndDescription(id int, title, description string) error {
+	url := fmt.Sprintf("%s/_apis/wit/workitems/%d?api-version=%s", c.baseURL(), id, apiVersion)
+	ops := []PatchOperation{
+		{Op: "add", Path: "/fields/System.Title", Value: title},
+		{Op: "add", Path: "/fields/System.Description", Value: description},
+	}
+	return c.patchJSON(url, "application/json-patch+json", ops, nil)
+}
+
 func (c *Client) CreateWorkItem(workItemType, title, state, iterationPath string) (*WorkItem, error) {
 	encodedType := strings.ReplaceAll(workItemType, " ", "%20")
 	url := fmt.Sprintf("%s/_apis/wit/workitems/$%s?api-version=%s", c.baseURL(), encodedType, apiVersion)

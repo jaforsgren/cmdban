@@ -2,6 +2,7 @@ package ui
 
 import (
 	"errors"
+	"os"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -132,6 +133,101 @@ func TestOpenCommentsADOBoardStartsLoading(t *testing.T) {
 	}
 
 	// The configured PAT isn't stored, so the fetch command should resolve
+	// to an error message rather than panic or hang.
+	msg := cmd()
+	if _, ok := msg.(errMsg); !ok {
+		t.Fatalf("cmd() = %T, want errMsg", msg)
+	}
+}
+
+func TestADOEditTempFileRoundTrip(t *testing.T) {
+	orig := &task.Task{Title: "Fix login bug", Description: "Steps:\n1. do a\n2. do b", ADOItemID: 99}
+
+	path, err := writeADOEditTempFile(orig)
+	if err != nil {
+		t.Fatalf("writeADOEditTempFile() error = %v", err)
+	}
+	defer os.Remove(path)
+
+	title, description, err := readADOEditTempFile(path)
+	if err != nil {
+		t.Fatalf("readADOEditTempFile() error = %v", err)
+	}
+	if title != orig.Title {
+		t.Fatalf("title = %q, want %q", title, orig.Title)
+	}
+	if description != orig.Description {
+		t.Fatalf("description = %q, want %q", description, orig.Description)
+	}
+}
+
+func TestHandleADOEditorFinishedNoChangeIsNoop(t *testing.T) {
+	m := NewModel(&config.Config{})
+	orig := &task.Task{Title: "Same", Description: "unchanged", ADOItemID: 1}
+
+	path, err := writeADOEditTempFile(orig)
+	if err != nil {
+		t.Fatalf("writeADOEditTempFile() error = %v", err)
+	}
+	defer os.Remove(path)
+
+	_, cmd := m.handleADOEditorFinished(adoEditorFinishedMsg{tempPath: path, task: orig})
+	if cmd != nil {
+		t.Fatalf("cmd = %v, want nil when nothing changed", cmd)
+	}
+}
+
+func TestHandleADOEditorFinishedEmptyTitleDiscardsEdit(t *testing.T) {
+	m := NewModel(&config.Config{})
+	orig := &task.Task{Title: "Original", Description: "body", ADOItemID: 1}
+
+	tmp, err := os.CreateTemp("", "cmdban-ado-test-*.md")
+	if err != nil {
+		t.Fatalf("CreateTemp() error = %v", err)
+	}
+	defer os.Remove(tmp.Name())
+	if _, err := tmp.WriteString("\n\nbody\n"); err != nil {
+		t.Fatalf("WriteString() error = %v", err)
+	}
+	tmp.Close()
+
+	got, cmd := m.handleADOEditorFinished(adoEditorFinishedMsg{tempPath: tmp.Name(), task: orig})
+	updated := got.(Model)
+
+	if cmd != nil {
+		t.Fatalf("cmd = %v, want nil for an empty title", cmd)
+	}
+	if updated.message == "" {
+		t.Fatalf("message = %q, want an explanation for the discarded edit", updated.message)
+	}
+}
+
+func TestHandleADOEditorFinishedChangedTitlePushesEdit(t *testing.T) {
+	cfg := &config.Config{
+		CurrentBoard: "ado",
+		Boards: []config.Board{
+			{
+				Name:        "ado",
+				Type:        config.BoardTypeAzureDevOps,
+				AzureDevOps: &config.AzureDevOpsConfig{Org: "org", Project: "proj", PAT: "missing"},
+			},
+		},
+	}
+	m := NewModel(cfg)
+	orig := &task.Task{Title: "Original", Description: "body", ADOItemID: 1}
+
+	path, err := writeADOEditTempFile(&task.Task{Title: "Updated", Description: "body", ADOItemID: 1})
+	if err != nil {
+		t.Fatalf("writeADOEditTempFile() error = %v", err)
+	}
+	defer os.Remove(path)
+
+	_, cmd := m.handleADOEditorFinished(adoEditorFinishedMsg{tempPath: path, task: orig})
+	if cmd == nil {
+		t.Fatalf("cmd = nil, want a push command for a changed title")
+	}
+
+	// The configured PAT isn't stored, so the push command should resolve
 	// to an error message rather than panic or hang.
 	msg := cmd()
 	if _, ok := msg.(errMsg); !ok {

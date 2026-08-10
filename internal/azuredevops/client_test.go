@@ -22,6 +22,14 @@ func TestDedupeIntsEmpty(t *testing.T) {
 	}
 }
 
+func TestHtmlizeTextEscapesAndAddsLineBreaks(t *testing.T) {
+	got := htmlizeText("Steps:\n1. a < b\n2. done & dusted")
+	want := "Steps:<br>\n1. a &lt; b<br>\n2. done &amp; dusted"
+	if got != want {
+		t.Fatalf("htmlizeText() = %q, want %q", got, want)
+	}
+}
+
 func TestStripHTMLRemovesTagsAndUnescapesEntities(t *testing.T) {
 	got := stripHTML("<div>Looks good &amp; ready &mdash; <b>ship it</b></div>")
 	want := "Looks good & ready — ship it"
