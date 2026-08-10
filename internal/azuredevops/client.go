@@ -13,6 +13,10 @@ import (
 
 const apiVersion = "7.0"
 
+// commentsAPIVersion targets the work item comments endpoint, which is still
+// preview-only as of api-version 7.x.
+const commentsAPIVersion = "7.1-preview.3"
+
 type Client struct {
 	org     string
 	project string
@@ -353,6 +357,23 @@ func (c *Client) CreateWorkItem(workItemType, title, state, iterationPath string
 		return nil, err
 	}
 	return &item, nil
+}
+
+// FetchComments returns a work item's comments, oldest first, with HTML
+// markup stripped from the comment text.
+func (c *Client) FetchComments(workItemID int) ([]Comment, error) {
+	url := fmt.Sprintf(
+		"%s/_apis/wit/workItems/%d/comments?api-version=%s",
+		c.baseURL(), workItemID, commentsAPIVersion,
+	)
+	var resp CommentListResponse
+	if err := c.get(url, &resp); err != nil {
+		return nil, err
+	}
+	for i := range resp.Comments {
+		resp.Comments[i].Text = stripHTML(resp.Comments[i].Text)
+	}
+	return resp.Comments, nil
 }
 
 func truncate(s string, n int) string {

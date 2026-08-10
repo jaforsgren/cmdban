@@ -42,6 +42,7 @@ const (
 	ModePATManager
 	ModeADOSetup
 	ModeLogs
+	ModeComments
 )
 
 type Model struct {
@@ -75,6 +76,10 @@ type Model struct {
 	minimizedLanes     map[task.Status]bool
 	logs               *applog.Buffer
 	logScroll          int
+	comments           []azuredevops.Comment
+	commentsScroll     int
+	commentsLoading    bool
+	commentsTaskTitle  string
 }
 
 type tasksLoadedMsg struct {
@@ -98,6 +103,10 @@ type editorFinishedMsg struct {
 }
 
 type configEditorFinishedMsg struct{}
+
+type commentsLoadedMsg struct {
+	comments []azuredevops.Comment
+}
 
 func NewModel(cfg *config.Config) Model {
 	ti := textinput.New()
@@ -218,10 +227,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case adoIterationsDiscoveredMsg:
 		return m.handleADOIterationsDiscovered(msg.iterations)
 
+	case commentsLoadedMsg:
+		m.commentsLoading = false
+		m.comments = msg.comments
+		return m, nil
+
 	case errMsg:
 		m.err = msg.err
 		m.message = "Error: " + msg.err.Error()
 		m.logs.Error(msg.err.Error())
+		if m.mode == ModeComments {
+			m.commentsLoading = false
+		}
 		return m, nil
 
 	case taskOrderSavedMsg:
@@ -279,6 +296,10 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	if m.mode == ModeLogs {
 		return m.handleLogsMode(msg)
+	}
+
+	if m.mode == ModeComments {
+		return m.handleCommentsMode(msg)
 	}
 
 	return m.handleNormalMode(msg)
@@ -472,6 +493,10 @@ func (m Model) handleNormalMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.OpenURL):
 		m.gPressed = false
 		return m.openTaskURL()
+
+	case key.Matches(msg, m.keys.Comments):
+		m.gPressed = false
+		return m.openComments()
 
 	default:
 		m.gPressed = false
@@ -676,6 +701,9 @@ func (m Model) handleViewMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case key.Matches(msg, m.keys.OpenURL):
 		return m.openTaskURL()
+
+	case key.Matches(msg, m.keys.Comments):
+		return m.openComments()
 
 	case key.Matches(msg, m.keys.Refresh):
 		if m.config.IsADOBoard() {
@@ -1101,6 +1129,40 @@ func (m Model) taskURL(t *task.Task) (string, bool) {
 	return match, true
 }
 
+func (m Model) openComments() (tea.Model, tea.Cmd) {
+	t := m.selectedTask()
+	if t == nil {
+		return m, nil
+	}
+	if !m.config.IsADOBoard() {
+		m.message = "Comments are only available on Azure DevOps boards"
+		return m, nil
+	}
+
+	m.mode = ModeComments
+	m.comments = nil
+	m.commentsScroll = 0
+	m.commentsLoading = true
+	m.commentsTaskTitle = t.Title
+	return m, m.fetchComments(t.ADOItemID)
+}
+
+func (m Model) fetchComments(workItemID int) tea.Cmd {
+	adoCfg := m.config.ActiveBoard().AzureDevOps
+	return func() tea.Msg {
+		token, ok := m.patStore.Get(adoCfg.PAT)
+		if !ok {
+			return errMsg{fmt.Errorf("PAT %q not found — run :pats to add it", adoCfg.PAT)}
+		}
+		client := azuredevops.NewClient(adoCfg.Org, adoCfg.Project, adoCfg.Team, token)
+		comments, err := client.FetchComments(workItemID)
+		if err != nil {
+			return errMsg{err}
+		}
+		return commentsLoadedMsg{comments: comments}
+	}
+}
+
 func openURLInBrowser(url string) error {
 	var c *exec.Cmd
 	switch runtime.GOOS {
@@ -1382,6 +1444,8 @@ func (m Model) renderHeader() string {
 		modeStr = "[ADO SETUP]"
 	case ModeLogs:
 		modeStr = "[LOGS]"
+	case ModeComments:
+		modeStr = "[COMMENTS]"
 	default:
 		modeStr = "[NORMAL]"
 	}
@@ -1437,6 +1501,10 @@ func (m Model) renderBoard() string {
 
 	if m.mode == ModeLogs {
 		return m.renderLogs()
+	}
+
+	if m.mode == ModeComments {
+		return m.renderComments()
 	}
 
 	laneWidths := m.computeLaneWidths()
@@ -1873,7 +1941,7 @@ func (m Model) renderTaskDetail() string {
 
 	footer := lipgloss.NewStyle().
 		Foreground(SubtleColor).
-		Render("Status: " + string(t.Status) + "  " + tags + "  [q: back, j/k: scroll, ctrl+g: edit in nvim]")
+		Render("Status: " + string(t.Status) + "  " + tags + "  [q: back, j/k: scroll, ctrl+g: edit in nvim, ctrl+o: open url, ctrl+c: comments]")
 
 	detailStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).

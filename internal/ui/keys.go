@@ -30,6 +30,7 @@ type KeyMap struct {
 	Refresh    key.Binding
 	OpenEditor key.Binding
 	OpenURL    key.Binding
+	Comments   key.Binding
 	Tag        key.Binding
 	Boards         key.Binding
 	CollapseColumn key.Binding
@@ -121,7 +122,7 @@ var DefaultKeyMap = KeyMap{
 		key.WithHelp("?", "help"),
 	),
 	Quit: key.NewBinding(
-		key.WithKeys("q", "ctrl+c"),
+		key.WithKeys("q"),
 		key.WithHelp("q", "quit"),
 	),
 	Search: key.NewBinding(
@@ -143,6 +144,10 @@ var DefaultKeyMap = KeyMap{
 	OpenURL: key.NewBinding(
 		key.WithKeys("ctrl+o"),
 		key.WithHelp("ctrl+o", "open url in browser"),
+	),
+	Comments: key.NewBinding(
+		key.WithKeys("ctrl+c"),
+		key.WithHelp("ctrl+c", "view comments"),
 	),
 	Tag: key.NewBinding(
 		key.WithKeys("t"),
@@ -170,6 +175,6 @@ func (k KeyMap) FullHelp() [][]key.Binding {
 		{k.New, k.Edit, k.ToggleDone, k.Delete},
 		{k.Mark, k.Tag, k.Search, k.Filter, k.Refresh},
 		{k.Settings, k.Help, k.Quit, k.Boards, k.CollapseColumn},
-		{k.OpenEditor, k.OpenURL},
+		{k.OpenEditor, k.OpenURL, k.Comments},
 	}
 }

@@ -1,6 +1,7 @@
 package azuredevops
 
 import (
+	"encoding/json"
 	"reflect"
 	"testing"
 )
@@ -18,5 +19,47 @@ func TestDedupeIntsEmpty(t *testing.T) {
 	got := dedupeInts(nil)
 	if len(got) != 0 {
 		t.Fatalf("dedupeInts(nil) = %v, want empty", got)
+	}
+}
+
+func TestStripHTMLRemovesTagsAndUnescapesEntities(t *testing.T) {
+	got := stripHTML("<div>Looks good &amp; ready &mdash; <b>ship it</b></div>")
+	want := "Looks good & ready — ship it"
+	if got != want {
+		t.Fatalf("stripHTML() = %q, want %q", got, want)
+	}
+}
+
+func TestCommentListResponseUnmarshal(t *testing.T) {
+	raw := `{
+		"count": 1,
+		"comments": [
+			{
+				"id": 7,
+				"text": "<p>Looks good</p>",
+				"createdBy": {"displayName": "Jane Doe", "id": "abc-123"},
+				"createdDate": "2026-08-11T10:00:00Z"
+			}
+		]
+	}`
+
+	var resp CommentListResponse
+	if err := json.Unmarshal([]byte(raw), &resp); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+
+	want := CommentListResponse{
+		Count: 1,
+		Comments: []Comment{
+			{
+				ID:          7,
+				Text:        "<p>Looks good</p>",
+				CreatedBy:   IdentityRef{DisplayName: "Jane Doe", ID: "abc-123"},
+				CreatedDate: "2026-08-11T10:00:00Z",
+			},
+		},
+	}
+	if !reflect.DeepEqual(resp, want) {
+		t.Fatalf("resp = %+v, want %+v", resp, want)
 	}
 }

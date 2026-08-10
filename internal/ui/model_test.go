@@ -86,6 +86,59 @@ func TestTaskURLADOBoardNoItemID(t *testing.T) {
 	}
 }
 
+func TestOpenCommentsLocalBoardShowsMessage(t *testing.T) {
+	m := NewModel(&config.Config{})
+	m.board.AddTask(&task.Task{ID: "1", Title: "local task", Status: task.StatusToday})
+
+	got, cmd := m.openComments()
+	updated := got.(Model)
+
+	if updated.mode == ModeComments {
+		t.Fatalf("mode = ModeComments, want unchanged for a local board")
+	}
+	if cmd != nil {
+		t.Fatalf("cmd = %v, want nil for a local board", cmd)
+	}
+	if updated.message == "" {
+		t.Fatalf("message = %q, want a explanation for a local board", updated.message)
+	}
+}
+
+func TestOpenCommentsADOBoardStartsLoading(t *testing.T) {
+	cfg := &config.Config{
+		CurrentBoard: "ado",
+		Boards: []config.Board{
+			{
+				Name:        "ado",
+				Type:        config.BoardTypeAzureDevOps,
+				AzureDevOps: &config.AzureDevOpsConfig{Org: "org", Project: "proj", PAT: "missing"},
+			},
+		},
+	}
+	m := NewModel(cfg)
+	m.board.AddTask(&task.Task{ID: "1", Title: "ado task", Status: task.StatusToday, ADOItemID: 42})
+
+	got, cmd := m.openComments()
+	updated := got.(Model)
+
+	if updated.mode != ModeComments {
+		t.Fatalf("mode = %v, want ModeComments", updated.mode)
+	}
+	if !updated.commentsLoading {
+		t.Fatalf("commentsLoading = false, want true")
+	}
+	if cmd == nil {
+		t.Fatalf("cmd = nil, want a fetch command")
+	}
+
+	// The configured PAT isn't stored, so the fetch command should resolve
+	// to an error message rather than panic or hang.
+	msg := cmd()
+	if _, ok := msg.(errMsg); !ok {
+		t.Fatalf("cmd() = %T, want errMsg", msg)
+	}
+}
+
 func TestSharedGroupKeyPrefersADOParent(t *testing.T) {
 	a := &task.Task{Title: "a", ADOParentID: 42, Tags: []string{"backend"}}
 	b := &task.Task{Title: "b", ADOParentID: 42, Tags: []string{"frontend"}}

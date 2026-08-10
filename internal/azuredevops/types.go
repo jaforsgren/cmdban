@@ -150,3 +150,15 @@ type BacklogWorkItemRef struct {
 type BacklogWorkItemsResponse struct {
 	WorkItems []BacklogWorkItemRef `json:"workItems"`
 }
+
+type Comment struct {
+	ID          int         `json:"id"`
+	Text        string      `json:"text"`
+	CreatedBy   IdentityRef `json:"createdBy"`
+	CreatedDate string      `json:"createdDate"`
+}
+
+type CommentListResponse struct {
+	Count    int       `json:"count"`
+	Comments []Comment `json:"comments"`
+}
