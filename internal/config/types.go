@@ -11,7 +11,9 @@ type AzureDevOpsConfig struct {
 	Org                 string            `yaml:"org"`
 	Project             string            `yaml:"project"`
 	Team                string            `yaml:"team"`
-	Iteration           string            `yaml:"iteration"`
+	Iteration           string            `yaml:"iteration,omitempty"`
+	BacklogLevel        string            `yaml:"backlog_level,omitempty"`
+	AssignedToMe        bool              `yaml:"assigned_to_me,omitempty"`
 	PAT                 string            `yaml:"pat"`
 	ColumnMap           map[string]string `yaml:"column_map"`
 	DefaultWorkItemType string            `yaml:"default_work_item_type,omitempty"`

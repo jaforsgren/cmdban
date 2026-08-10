@@ -14,6 +14,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"cmdban/internal/applog"
 	"cmdban/internal/azuredevops"
 	"cmdban/internal/config"
 	"cmdban/internal/markdown"
@@ -36,6 +37,7 @@ const (
 	ModeBoardSelector
 	ModePATManager
 	ModeADOSetup
+	ModeLogs
 )
 
 type Model struct {
@@ -67,6 +69,8 @@ type Model struct {
 	lastSyncTime       time.Time
 	adoSetup           adoSetupState
 	minimizedLanes     map[task.Status]bool
+	logs               *applog.Buffer
+	logScroll          int
 }
 
 type tasksLoadedMsg struct {
@@ -121,6 +125,7 @@ func NewModel(cfg *config.Config) Model {
 		mode:             ModeNormal,
 		revealedPATIndex: -1,
 		minimizedLanes:   make(map[task.Status]bool),
+		logs:             applog.NewBuffer(),
 	}
 }
 
@@ -145,10 +150,14 @@ func (m Model) loadADOTasks() tea.Msg {
 	if !ok {
 		return errMsg{fmt.Errorf("PAT %q not found — run :pats to add it", adoCfg.PAT)}
 	}
-	tasks, err := azuredevops.FetchBoardTasks(adoCfg, token)
+	tasks, diag, err := azuredevops.FetchBoardTasks(adoCfg, token)
 	if err != nil {
 		return errMsg{err}
 	}
+	m.logs.Info(fmt.Sprintf(
+		"ADO sync %s/%s/%s source=%s iteration=%q: fetched %d, showing %d",
+		adoCfg.Org, adoCfg.Project, adoCfg.Team, diag.Source, diag.IterationPath, diag.FetchedCount, diag.ReturnedCount,
+	))
 	return tasksLoadedMsg{tasks}
 }
 
@@ -208,6 +217,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case errMsg:
 		m.err = msg.err
 		m.message = "Error: " + msg.err.Error()
+		m.logs.Error(msg.err.Error())
 		return m, nil
 
 	case taskOrderSavedMsg:
@@ -261,6 +271,10 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	if m.mode == ModeADOSetup {
 		return m.handleADOSetupMode(msg)
+	}
+
+	if m.mode == ModeLogs {
+		return m.handleLogsMode(msg)
 	}
 
 	return m.handleNormalMode(msg)
@@ -500,6 +514,7 @@ func (m Model) handleInputMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.patStore.Set(m.pendingPATName, value)
 			if err := m.patStore.Save(); err != nil {
 				m.message = "Error saving PAT: " + err.Error()
+				m.logs.Error(m.message)
 			} else {
 				m.message = fmt.Sprintf("PAT %q saved", m.pendingPATName)
 			}
@@ -512,7 +527,7 @@ func (m Model) handleInputMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.mode = ModeADOSetup
 				return m, nil
 			}
-			org, project, team, boardLevel, err := parseADOBoardURL(value)
+			org, project, team, boardLevel, isBacklog, err := parseADOBoardURL(value)
 			if err != nil {
 				m.message = "Invalid ADO URL: " + err.Error()
 				m.mode = ModeNormal
@@ -522,6 +537,7 @@ func (m Model) handleInputMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.adoSetup.project = project
 			m.adoSetup.team = team
 			m.adoSetup.boardLevel = boardLevel
+			m.adoSetup.isBacklog = isBacklog
 			m.adoSetup.boardName = strings.ToLower(strings.ReplaceAll(project, " ", "-")) + "-sprint"
 			m.adoSetup.fromURL = true
 			m.mode = ModeADOSetup
@@ -758,6 +774,7 @@ func (m Model) handlePATManagerMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.patStore.Delete(name)
 			if err := m.patStore.Save(); err != nil {
 				m.message = "Error saving: " + err.Error()
+				m.logs.Error(m.message)
 			} else {
 				m.message = fmt.Sprintf("PAT %q deleted", name)
 			}
@@ -864,10 +881,12 @@ func (m Model) handleCommand(cmd string) (tea.Model, tea.Cmd) {
 			}
 			if err := m.config.Save(); err != nil {
 				m.message = "Error saving config: " + err.Error()
+				m.logs.Error(m.message)
 			} else {
 				m.message = "Task directory set to: " + parts[2]
 				if err := m.config.EnsureTaskDirectory(); err != nil {
 					m.message = "Error creating directory: " + err.Error()
+					m.logs.Error(m.message)
 				}
 			}
 			m.mode = ModeNormal
@@ -903,6 +922,11 @@ func (m Model) handleCommand(cmd string) (tea.Model, tea.Cmd) {
 		m.mode = ModeBoardSelector
 		return m, nil
 
+	case "logs", "log", "l":
+		m.logScroll = 0
+		m.mode = ModeLogs
+		return m, nil
+
 	default:
 		m.message = "Unknown command: " + parts[0]
 	}
@@ -917,6 +941,7 @@ func (m Model) handleSettingsCommand(value string) (tea.Model, tea.Cmd) {
 	}
 	if err := m.config.Save(); err != nil {
 		m.message = "Error saving config: " + err.Error()
+		m.logs.Error(m.message)
 	} else {
 		m.message = "Task directory set to: " + value
 	}
@@ -1039,6 +1064,7 @@ func (m Model) reloadConfig() (tea.Model, tea.Cmd) {
 	newConfig, err := config.Load()
 	if err != nil {
 		m.message = "Error reloading config: " + err.Error()
+		m.logs.Error(m.message)
 		return m, nil
 	}
 	m.config = newConfig
@@ -1288,6 +1314,8 @@ func (m Model) renderHeader() string {
 		modeStr = "[PATS]"
 	case ModeADOSetup:
 		modeStr = "[ADO SETUP]"
+	case ModeLogs:
+		modeStr = "[LOGS]"
 	default:
 		modeStr = "[NORMAL]"
 	}
@@ -1339,6 +1367,10 @@ func (m Model) renderBoard() string {
 
 	if m.mode == ModeADOSetup {
 		return m.renderADOSetup()
+	}
+
+	if m.mode == ModeLogs {
+		return m.renderLogs()
 	}
 
 	laneWidths := m.computeLaneWidths()
@@ -1519,22 +1551,22 @@ func laneScrollWindow(rendered []string, activeIdx, availableHeight int) (visibl
 }
 
 // tagGroupColors returns, for each task in order, the color of the vertical
-// group bar to render beside it. Adjacent tasks sharing a tag are considered
-// one group and get a matching bar color; a task with no adjacent match gets
-// an empty color (no bar). Grouping is purely visual and does not affect
-// ordering or selection.
+// group bar to render beside it. Adjacent tasks sharing an ADO parent (or,
+// absent that, a tag) are considered one group and get a matching bar color;
+// a task with no adjacent match gets an empty color (no bar). Grouping is
+// purely visual and does not affect ordering or selection.
 func tagGroupColors(tasks []*task.Task) []lipgloss.Color {
 	colors := make([]lipgloss.Color, len(tasks))
 	for i := range tasks {
-		var tag string
+		var key string
 		if i > 0 {
-			tag = sharedTag(tasks[i-1], tasks[i])
+			key = sharedGroupKey(tasks[i-1], tasks[i])
 		}
-		if tag == "" && i < len(tasks)-1 {
-			tag = sharedTag(tasks[i], tasks[i+1])
+		if key == "" && i < len(tasks)-1 {
+			key = sharedGroupKey(tasks[i], tasks[i+1])
 		}
-		if tag != "" {
-			colors[i] = tagBarColor(tag)
+		if key != "" {
+			colors[i] = tagBarColor(key)
 		}
 	}
 	return colors
@@ -1546,6 +1578,17 @@ var ungroupableTags = map[string]bool{
 	"user-story": true,
 	"feature":    true,
 	"epic":       true,
+}
+
+// sharedGroupKey returns a key identifying the group both tasks belong to,
+// or "" if none. ADO work items sharing a parent take priority over tasks
+// merely sharing a tag, since the parent link is an explicit relationship
+// rather than an incidental match.
+func sharedGroupKey(a, b *task.Task) string {
+	if a.ADOParentID != 0 && a.ADOParentID == b.ADOParentID {
+		return fmt.Sprintf("parent-%d", a.ADOParentID)
+	}
+	return sharedTag(a, b)
 }
 
 // sharedTag returns a tag common to both tasks, or "" if none.
@@ -1858,6 +1901,7 @@ func (m Model) renderHelp() string {
   r        refresh              :q      quit
   q        quit                 :b      board switcher
   ctrl+b   board switcher       :pats   PAT manager
+                                :logs   error/log viewer
 
   Press ? or ESC to close help
 `
@@ -1910,11 +1954,13 @@ func (m Model) createBoard(name, directory string) (tea.Model, tea.Cmd) {
 	m.config.AddBoard(name, directory)
 	if err := m.config.Save(); err != nil {
 		m.message = "Error saving config: " + err.Error()
+		m.logs.Error(m.message)
 		m.mode = ModeNormal
 		return m, nil
 	}
 	if err := m.config.EnsureTaskDirectory(); err != nil {
 		m.message = "Error creating directory: " + err.Error()
+		m.logs.Error(m.message)
 	}
 	return m.switchBoard(name)
 }
@@ -1923,6 +1969,7 @@ func (m Model) switchBoard(name string) (tea.Model, tea.Cmd) {
 	m.config.CurrentBoard = name
 	if err := m.config.Save(); err != nil {
 		m.message = "Error saving config: " + err.Error()
+		m.logs.Error(m.message)
 		m.mode = ModeNormal
 		return m, nil
 	}

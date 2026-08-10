@@ -59,24 +59,161 @@ func resolveIterationPath(client *Client, stored string) (string, error) {
 	return "", fmt.Errorf("iteration %q not found in team iterations", stored)
 }
 
-func FetchBoardTasks(adoCfg *config.AzureDevOpsConfig, pat string) ([]*task.Task, error) {
+// resolveBacklogID looks up the backlog ID matching the configured backlog
+// level name (e.g. "Epics"), since the workItems endpoint takes an ID, not
+// the display name shown in the URL.
+func resolveBacklogID(client *Client, backlogLevel string) (string, error) {
+	backlogs, err := client.ListBacklogs()
+	if err != nil {
+		return "", fmt.Errorf("listing backlogs: %w", err)
+	}
+	for _, b := range backlogs {
+		if strings.EqualFold(b.Name, backlogLevel) {
+			return b.ID, nil
+		}
+	}
+	return "", fmt.Errorf("backlog level %q not found for team", backlogLevel)
+}
+
+// fetchBacklogIDsWithDescendants returns every work item at the given
+// backlog level plus all of its descendants (children, grandchildren, ...),
+// so an "Epics" board also surfaces the Features and Stories beneath them.
+// The descendant walk is a single recursive WIQL tree query rather than
+// fetching level by level.
+func fetchBacklogIDsWithDescendants(client *Client, backlogID string) ([]int, error) {
+	roots, err := client.FetchBacklogWorkItemIDs(backlogID)
+	if err != nil {
+		return nil, err
+	}
+	return client.FetchDescendantIDs(roots)
+}
+
+// SyncDiagnostics reports what a FetchBoardTasks call actually did, so
+// callers can explain an empty result instead of failing silently.
+type SyncDiagnostics struct {
+	Source        string
+	IterationPath string
+	FetchedCount  int
+	ReturnedCount int
+}
+
+func FetchBoardTasks(adoCfg *config.AzureDevOpsConfig, pat string) ([]*task.Task, SyncDiagnostics, error) {
 	client := NewClient(adoCfg.Org, adoCfg.Project, adoCfg.Team, pat)
 
-	iterationPath, err := resolveIterationPath(client, adoCfg.Iteration)
-	if err != nil {
-		return nil, fmt.Errorf("resolving iteration: %w", err)
-	}
+	var (
+		items         []WorkItem
+		iterationPath string
+		source        string
+		err           error
+	)
 
-	items, err := client.FetchWorkItems(iterationPath)
-	if err != nil {
-		return nil, fmt.Errorf("fetching work items: %w", err)
+	switch {
+	case adoCfg.AssignedToMe:
+		// Assigned-to-me boards skip iteration/backlog scoping entirely —
+		// fetch everything in the project assigned to the PAT's identity,
+		// mirroring "give me my work items" rather than walking a hierarchy.
+		items, err = client.FetchAssignedToMeWorkItems()
+		if err != nil {
+			return nil, SyncDiagnostics{}, fmt.Errorf("fetching assigned work items: %w", err)
+		}
+		source = "assigned-to-me"
+
+	case adoCfg.BacklogLevel != "":
+		// Backlog levels list every item at that level regardless of
+		// iteration — teams that only use backlogs may have no sprint
+		// iterations configured at all, so iteration resolution is skipped.
+		var backlogID string
+		backlogID, err = resolveBacklogID(client, adoCfg.BacklogLevel)
+		if err != nil {
+			return nil, SyncDiagnostics{}, err
+		}
+		var ids []int
+		ids, err = fetchBacklogIDsWithDescendants(client, backlogID)
+		if err != nil {
+			return nil, SyncDiagnostics{}, fmt.Errorf("fetching backlog work items: %w", err)
+		}
+		items, err = client.FetchWorkItemsByIDs(ids)
+		if err != nil {
+			return nil, SyncDiagnostics{}, fmt.Errorf("fetching work item details: %w", err)
+		}
+		source = "backlog:" + adoCfg.BacklogLevel
+
+	default:
+		iterationPath, err = resolveIterationPath(client, adoCfg.Iteration)
+		if err != nil {
+			return nil, SyncDiagnostics{}, fmt.Errorf("resolving iteration: %w", err)
+		}
+		items, err = client.FetchWorkItems(iterationPath)
+		if err != nil {
+			return nil, SyncDiagnostics{}, fmt.Errorf("fetching work items: %w", err)
+		}
+		source = "iteration"
 	}
 
 	tasks := make([]*task.Task, 0, len(items))
 	for _, item := range items {
 		tasks = append(tasks, workItemToTask(item, adoCfg))
 	}
-	return tasks, nil
+
+	filtered := filterForBoardMode(tasks, adoCfg.BacklogLevel, adoCfg.AssignedToMe)
+	diag := SyncDiagnostics{
+		Source:        source,
+		IterationPath: iterationPath,
+		FetchedCount:  len(items),
+		ReturnedCount: len(filtered),
+	}
+	return filtered, diag, nil
+}
+
+// filterForBoardMode applies the Feature/Story collapsing filter for sprint
+// (iteration-based) boards only. Backlog-cascade and assigned-to-me boards
+// deliberately surface a mixed hierarchy (Epics, Features, Stories, Tasks,
+// ...), so that collapsing — built for sprint boards — doesn't apply there.
+func filterForBoardMode(tasks []*task.Task, backlogLevel string, assignedToMe bool) []*task.Task {
+	if backlogLevel != "" || assignedToMe {
+		return tasks
+	}
+	return filterFeaturesAndStories(tasks)
+}
+
+const (
+	workItemTypeUserStory = "User Story"
+	workItemTypeFeature   = "Feature"
+)
+
+// filterFeaturesAndStories keeps only User Story and Feature work items,
+// collapsing a Feature down to its child User Stories when at least one is
+// present in the set; a childless Feature is kept on its own. Boards that
+// don't carry any Story/Feature items at all (e.g. an Epics-only backlog)
+// are left untouched — the filter only applies to sprint-style boards where
+// stories/features are the unit of work.
+func filterFeaturesAndStories(tasks []*task.Task) []*task.Task {
+	featuresWithStories := make(map[int]bool)
+	hasStoryOrFeature := false
+	for _, t := range tasks {
+		if t.ADOWorkItemType == workItemTypeUserStory || t.ADOWorkItemType == workItemTypeFeature {
+			hasStoryOrFeature = true
+		}
+		if t.ADOWorkItemType == workItemTypeUserStory && t.ADOParentID != 0 {
+			featuresWithStories[t.ADOParentID] = true
+		}
+	}
+	if !hasStoryOrFeature {
+		return tasks
+	}
+
+	filtered := make([]*task.Task, 0, len(tasks))
+	for _, t := range tasks {
+		switch t.ADOWorkItemType {
+		case workItemTypeUserStory:
+			filtered = append(filtered, t)
+		case workItemTypeFeature:
+			if !featuresWithStories[t.ADOItemID] {
+				filtered = append(filtered, t)
+			}
+		}
+	}
+	return filtered
 }
 
 func workItemToTask(item WorkItem, cfg *config.AzureDevOpsConfig) *task.Task {
@@ -105,15 +242,17 @@ func workItemToTask(item WorkItem, cfg *config.AzureDevOpsConfig) *task.Task {
 	}
 
 	return &task.Task{
-		ID:          fmt.Sprintf("ado-%d", f.ID),
-		Title:       f.Title,
-		Description: desc,
-		Status:      lane,
-		Tags:        tags,
-		FilePath:    "",
-		ADOItemID:   f.ID,
-		CreatedAt:   createdAt,
-		UpdatedAt:   updatedAt,
+		ID:              fmt.Sprintf("ado-%d", f.ID),
+		Title:           f.Title,
+		Description:     desc,
+		Status:          lane,
+		Tags:            tags,
+		FilePath:        "",
+		ADOItemID:       f.ID,
+		ADOParentID:     f.Parent,
+		ADOWorkItemType: f.WorkItemType,
+		CreatedAt:       createdAt,
+		UpdatedAt:       updatedAt,
 	}
 }
 

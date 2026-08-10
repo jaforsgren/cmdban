@@ -35,6 +35,7 @@ type adoSetupState struct {
 	team          string
 	teams         []string
 	boardLevel    string
+	isBacklog     bool
 	boardColumns  []azuredevops.BoardColumn
 	iterations    []azuredevops.Iteration
 	iteration     string
@@ -60,30 +61,45 @@ func (m Model) startADOSetup() (tea.Model, tea.Cmd) {
 	m.mode = ModeInput
 	m.inputAction = "ado-url"
 	m.textInput.Reset()
-	m.textInput.Placeholder = "Paste ADO board URL, or Enter to pick manually..."
+	m.textInput.Placeholder = "Paste ADO board/backlog URL, or Enter to pick manually..."
 	m.textInput.EchoMode = textinput.EchoNormal
 	m.textInput.Width = 70
 	m.textInput.Focus()
 	return m, textinput.Blink
 }
 
-// parseADOBoardURL extracts org, project, team, and board level from a URL:
-// https://dev.azure.com/{org}/{project}/_boards/board/t/{team}/{level}
-func parseADOBoardURL(raw string) (org, project, team, boardLevel string, err error) {
+// parseADOBoardURL extracts org, project, team, and board level from either
+// a Kanban board URL or a backlog URL:
+//
+//	https://dev.azure.com/{org}/{project}/_boards/board/t/{team}/{level}
+//	https://dev.azure.com/{org}/{project}/_backlogs/backlog/{team}/{level}
+//
+// isBacklog reports whether the URL was a backlog URL — backlog levels list
+// every item at that level regardless of sprint iteration, unlike Kanban
+// boards, so callers use it to skip iteration-based setup entirely.
+func parseADOBoardURL(raw string) (org, project, team, boardLevel string, isBacklog bool, err error) {
 	u, parseErr := url.Parse(raw)
 	if parseErr != nil {
-		return "", "", "", "", fmt.Errorf("invalid URL: %w", parseErr)
+		return "", "", "", "", false, fmt.Errorf("invalid URL: %w", parseErr)
 	}
 	parts := strings.Split(strings.Trim(u.Path, "/"), "/")
-	// expected: [org, project, _boards, board, t, team, level]
-	if len(parts) < 6 || parts[2] != "_boards" || parts[4] != "t" {
-		return "", "", "", "", fmt.Errorf("not a recognised ADO board URL")
+
+	switch {
+	case len(parts) >= 6 && parts[2] == "_boards" && parts[4] == "t":
+		level := ""
+		if len(parts) > 6 {
+			level = parts[6]
+		}
+		return parts[0], parts[1], parts[5], level, false, nil
+	case len(parts) >= 5 && parts[2] == "_backlogs" && parts[3] == "backlog":
+		level := ""
+		if len(parts) > 5 {
+			level = parts[5]
+		}
+		return parts[0], parts[1], parts[4], level, true, nil
+	default:
+		return "", "", "", "", false, fmt.Errorf("not a recognised ADO board or backlog URL")
 	}
-	level := ""
-	if len(parts) > 6 {
-		level = parts[6]
-	}
-	return parts[0], parts[1], parts[5], level, nil
 }
 
 func (m Model) handleADOSetupMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -239,6 +255,11 @@ func (m Model) discoverBoardColumns() tea.Msg {
 
 func (m Model) handleADOBoardColumnsDiscovered(columns []azuredevops.BoardColumn) (tea.Model, tea.Cmd) {
 	m.adoSetup.boardColumns = columns
+	if m.adoSetup.isBacklog {
+		// Backlog levels aren't scoped to a sprint iteration, so there's
+		// nothing to pick — skip straight to naming the board.
+		return m.enterBoardNameStep()
+	}
 	m.adoSetup.loading = true
 	m.adoSetup.step = adoSetupStepSelectIteration
 	return m, m.discoverIterations
@@ -323,6 +344,15 @@ func slugify(s string) string {
 	return result
 }
 
+// backlogLevelFor returns the ADO backlog level to store for a backlog-
+// sourced board, or "" for a Kanban board (which is scoped by iteration).
+func backlogLevelFor(setup adoSetupState) string {
+	if setup.isBacklog {
+		return setup.boardLevel
+	}
+	return ""
+}
+
 func (m Model) saveADOBoard(boardName string) (tea.Model, tea.Cmd) {
 	setup := m.adoSetup
 	columns, columnMap := generateColumnConfig(setup.boardColumns)
@@ -344,12 +374,13 @@ func (m Model) saveADOBoard(boardName string) (tea.Model, tea.Cmd) {
 		Name: boardName,
 		Type: config.BoardTypeAzureDevOps,
 		AzureDevOps: &config.AzureDevOpsConfig{
-			Org:             setup.org,
-			Project:         setup.project,
-			Team:            setup.team,
-			Iteration:       setup.iteration,
-			PAT:             setup.patAlias,
-			ColumnMap:       columnMap,
+			Org:                 setup.org,
+			Project:             setup.project,
+			Team:                setup.team,
+			Iteration:           setup.iteration,
+			BacklogLevel:        backlogLevelFor(setup),
+			PAT:                 setup.patAlias,
+			ColumnMap:           columnMap,
 			DefaultWorkItemType: "User Story",
 		},
 		Columns: columns,
@@ -357,6 +388,7 @@ func (m Model) saveADOBoard(boardName string) (tea.Model, tea.Cmd) {
 	m.config.Boards = append(m.config.Boards, board)
 	if err := m.config.Save(); err != nil {
 		m.message = "Error saving config: " + err.Error()
+		m.logs.Error(m.message)
 		m.mode = ModeNormal
 		return m, nil
 	}
@@ -492,9 +524,12 @@ func (m Model) renderADOSetupBreadcrumb() string {
 			case adoSetupStepSelectTeam:
 				label = setup.team
 			case adoSetupStepSelectIteration:
-				if setup.iteration == "@CurrentIteration" {
+				switch {
+				case setup.isBacklog:
+					label = "backlog: " + setup.boardLevel
+				case setup.iteration == "@CurrentIteration":
 					label = "auto"
-				} else {
+				default:
 					label = iterationDisplayName(setup.iteration)
 				}
 			}
@@ -533,6 +568,7 @@ func (m Model) handleADOOrgsDiscovered(orgs []string) (tea.Model, tea.Cmd) {
 func (m Model) handleADOOrgsDiscoveryFailed(err error) (tea.Model, tea.Cmd) {
 	m.adoSetup.loading = false
 	m.adoSetup.loadError = "Could not fetch organisations: " + err.Error()
+	m.logs.Error(m.adoSetup.loadError)
 	m.adoSetup.step = adoSetupStepSelectOrg
 	m.mode = ModeInput
 	m.inputAction = "ado-org-name"
@@ -542,4 +578,3 @@ func (m Model) handleADOOrgsDiscoveryFailed(err error) (tea.Model, tea.Cmd) {
 	m.textInput.Focus()
 	return m, textinput.Blink
 }
-

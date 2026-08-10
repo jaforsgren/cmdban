@@ -173,16 +173,113 @@ func (c *Client) CurrentIterationPath() (string, error) {
 	return "", fmt.Errorf("no iterations found for team %q", c.team)
 }
 
+func (c *Client) ListBacklogs() ([]Backlog, error) {
+	url := fmt.Sprintf(
+		"https://dev.azure.com/%s/%s/%s/_apis/work/backlogs?api-version=%s",
+		c.org, c.project, c.team, apiVersion,
+	)
+	var resp BacklogListResponse
+	if err := c.get(url, &resp); err != nil {
+		return nil, err
+	}
+	return resp.Value, nil
+}
+
+// FetchBacklogWorkItemIDs returns the IDs of the work items on a backlog
+// level, in backlog order. Unlike sprint boards, backlog levels aren't
+// scoped to a team iteration.
+func (c *Client) FetchBacklogWorkItemIDs(backlogID string) ([]int, error) {
+	url := fmt.Sprintf(
+		"https://dev.azure.com/%s/%s/%s/_apis/work/backlogs/%s/workItems?api-version=%s",
+		c.org, c.project, c.team, backlogID, apiVersion,
+	)
+	var resp BacklogWorkItemsResponse
+	if err := c.get(url, &resp); err != nil {
+		return nil, err
+	}
+	ids := make([]int, len(resp.WorkItems))
+	for i, ref := range resp.WorkItems {
+		ids[i] = ref.Target.ID
+	}
+	return ids, nil
+}
+
 const workItemBatchSize = 200
 
-func (c *Client) FetchWorkItems(iterationPath string) ([]WorkItem, error) {
-	wiqlURL := fmt.Sprintf("%s/_apis/wit/wiql?$top=%d&api-version=%s", c.baseURL(), workItemBatchSize, apiVersion)
+const workItemFields = "System.Id,System.Title,System.State,System.Description,System.Tags,System.WorkItemType,System.AssignedTo,System.IterationPath,System.ChangedDate,System.CreatedDate,System.Parent"
 
+// FetchDescendantIDs returns the IDs of rootIDs plus every descendant
+// reachable by following parent→child hierarchy links, in a single WIQL
+// "work item links" tree query with MODE(Recursive) — Azure DevOps walks
+// the full depth server-side, so no manual per-level fetching is needed.
+func (c *Client) FetchDescendantIDs(rootIDs []int) ([]int, error) {
+	if len(rootIDs) == 0 {
+		return nil, nil
+	}
+
+	var all []int
+	for start := 0; start < len(rootIDs); start += workItemBatchSize {
+		end := min(start+workItemBatchSize, len(rootIDs))
+		batch := rootIDs[start:end]
+		strIDs := make([]string, len(batch))
+		for i, id := range batch {
+			strIDs[i] = fmt.Sprintf("%d", id)
+		}
+
+		wiqlURL := fmt.Sprintf("%s/_apis/wit/wiql?api-version=%s", c.baseURL(), apiVersion)
+		query := fmt.Sprintf(
+			"SELECT [System.Id] FROM WorkItemLinks WHERE "+
+				"([Source].[System.TeamProject] = '%s' AND [Source].[System.Id] IN (%s)) "+
+				"AND ([System.Links.LinkType] = 'System.LinkTypes.Hierarchy-Forward') "+
+				"AND ([Target].[System.TeamProject] = '%s') "+
+				"MODE (Recursive)",
+			c.project, strings.Join(strIDs, ","), c.project,
+		)
+		var result WorkItemLinkQueryResult
+		if err := c.post(wiqlURL, map[string]string{"query": query}, &result); err != nil {
+			return nil, err
+		}
+		for _, rel := range result.WorkItemRelations {
+			if rel.Source != nil {
+				all = append(all, rel.Source.ID)
+			}
+			if rel.Target != nil {
+				all = append(all, rel.Target.ID)
+			}
+		}
+	}
+	return dedupeInts(all), nil
+}
+
+func dedupeInts(ids []int) []int {
+	seen := make(map[int]bool, len(ids))
+	out := make([]int, 0, len(ids))
+	for _, id := range ids {
+		if !seen[id] {
+			seen[id] = true
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
+func (c *Client) FetchWorkItems(iterationPath string) ([]WorkItem, error) {
 	escapedPath := strings.ReplaceAll(iterationPath, `\`, `\\`)
-	query := fmt.Sprintf(
-		"SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = '%s' AND [System.IterationPath] = '%s' ORDER BY [System.ChangedDate] DESC",
-		c.project, escapedPath,
-	)
+	where := fmt.Sprintf("[System.TeamProject] = '%s' AND [System.IterationPath] = '%s'", c.project, escapedPath)
+	return c.fetchWorkItemsByWIQL(where)
+}
+
+// FetchAssignedToMeWorkItems returns full details for every work item in the
+// project assigned to the PAT's own identity, via WIQL's @Me macro — no
+// iteration or backlog-hierarchy scoping, just "everything that's mine".
+func (c *Client) FetchAssignedToMeWorkItems() ([]WorkItem, error) {
+	where := fmt.Sprintf("[System.TeamProject] = '%s' AND [System.AssignedTo] = @Me", c.project)
+	return c.fetchWorkItemsByWIQL(where)
+}
+
+func (c *Client) fetchWorkItemsByWIQL(whereClause string) ([]WorkItem, error) {
+	wiqlURL := fmt.Sprintf("%s/_apis/wit/wiql?$top=%d&api-version=%s", c.baseURL(), workItemBatchSize, apiVersion)
+	query := fmt.Sprintf("SELECT [System.Id] FROM WorkItems WHERE %s ORDER BY [System.ChangedDate] DESC", whereClause)
 
 	var wiqlResult WIQLResult
 	if err := c.post(wiqlURL, map[string]string{"query": query}, &wiqlResult); err != nil {
@@ -193,21 +290,27 @@ func (c *Client) FetchWorkItems(iterationPath string) ([]WorkItem, error) {
 		return nil, nil
 	}
 
-	fields := "System.Id,System.Title,System.State,System.Description,System.Tags,System.WorkItemType,System.AssignedTo,System.IterationPath,System.ChangedDate,System.CreatedDate"
+	ids := make([]int, len(wiqlResult.WorkItems))
+	for i, ref := range wiqlResult.WorkItems {
+		ids[i] = ref.ID
+	}
+	return c.FetchWorkItemsByIDs(ids)
+}
+
+// FetchWorkItemsByIDs fetches full work item details for an explicit list of
+// IDs, batching requests to stay under the API's per-call limit.
+func (c *Client) FetchWorkItemsByIDs(ids []int) ([]WorkItem, error) {
 	var all []WorkItem
-	for start := 0; start < len(wiqlResult.WorkItems); start += workItemBatchSize {
-		end := start + workItemBatchSize
-		if end > len(wiqlResult.WorkItems) {
-			end = len(wiqlResult.WorkItems)
-		}
-		batch := wiqlResult.WorkItems[start:end]
-		ids := make([]string, len(batch))
-		for i, ref := range batch {
-			ids[i] = fmt.Sprintf("%d", ref.ID)
+	for start := 0; start < len(ids); start += workItemBatchSize {
+		end := min(start+workItemBatchSize, len(ids))
+		batch := ids[start:end]
+		strIDs := make([]string, len(batch))
+		for i, id := range batch {
+			strIDs[i] = fmt.Sprintf("%d", id)
 		}
 		detailURL := fmt.Sprintf(
 			"%s/_apis/wit/workitems?ids=%s&fields=%s&api-version=%s",
-			c.baseURL(), strings.Join(ids, ","), fields, apiVersion,
+			c.baseURL(), strings.Join(strIDs, ","), workItemFields, apiVersion,
 		)
 		var listResp WorkItemListResponse
 		if err := c.get(detailURL, &listResp); err != nil {

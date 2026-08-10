@@ -9,8 +9,25 @@ type WIQLResult struct {
 	WorkItems []WorkItemReference `json:"workItems"`
 }
 
+// WorkItemLinkQueryResult is the response shape for a WIQL "work item links"
+// (tree) query, as opposed to a flat WorkItems query. The first relation for
+// each root has a nil Source; every other relation is a parent/child edge.
+type WorkItemLinkQueryResult struct {
+	WorkItemRelations []WorkItemLinkRelation `json:"workItemRelations"`
+}
+
+type WorkItemLinkRelation struct {
+	Source *WorkItemReference `json:"source"`
+	Target *WorkItemReference `json:"target"`
+}
+
 type IdentityRef struct {
 	DisplayName string `json:"displayName"`
+	ID          string `json:"id"`
+}
+
+type Profile struct {
+	ID string `json:"id"`
 }
 
 type WorkItemFields struct {
@@ -24,6 +41,7 @@ type WorkItemFields struct {
 	IterationPath string       `json:"System.IterationPath"`
 	ChangedDate   string       `json:"System.ChangedDate"`
 	CreatedDate   string       `json:"System.CreatedDate"`
+	Parent        int          `json:"System.Parent"`
 }
 
 type WorkItem struct {
@@ -109,4 +127,26 @@ type Team struct {
 type TeamListResponse struct {
 	Count int    `json:"count"`
 	Value []Team `json:"value"`
+}
+
+type Backlog struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+type BacklogListResponse struct {
+	Count int       `json:"count"`
+	Value []Backlog `json:"value"`
+}
+
+type BacklogWorkItemTarget struct {
+	ID int `json:"id"`
+}
+
+type BacklogWorkItemRef struct {
+	Target BacklogWorkItemTarget `json:"target"`
+}
+
+type BacklogWorkItemsResponse struct {
+	WorkItems []BacklogWorkItemRef `json:"workItems"`
 }
