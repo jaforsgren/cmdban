@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -94,6 +95,17 @@ func TestClientGetReturnsErrorOnHTTPFailure(t *testing.T) {
 	err := c.get(srv.URL, &resp)
 	if err == nil {
 		t.Fatal("get() error = nil, want an error for a 404 response")
+	}
+
+	msg := err.Error()
+	if !strings.Contains(msg, "GET") {
+		t.Errorf("error %q does not contain the HTTP method", msg)
+	}
+	if !strings.Contains(msg, srv.URL) {
+		t.Errorf("error %q does not contain the request URL", msg)
+	}
+	if !strings.Contains(msg, "404") {
+		t.Errorf("error %q does not contain the status code", msg)
 	}
 }
 

@@ -85,7 +85,7 @@ func (c *Client) do(method, url, contentType string, payload, out any) error {
 	}
 
 	if resp.StatusCode >= 400 {
-		return fmt.Errorf("ADO %d: %s", resp.StatusCode, truncate(string(respBody), 200))
+		return fmt.Errorf("ADO %s %s: %d %s", method, url, resp.StatusCode, truncate(string(respBody), 200))
 	}
 
 	if out == nil {

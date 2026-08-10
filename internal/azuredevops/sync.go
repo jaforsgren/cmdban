@@ -262,7 +262,10 @@ func PushStateChange(adoCfg *config.AzureDevOpsConfig, pat string, t *task.Task,
 	}
 	client := NewClient(adoCfg.Org, adoCfg.Project, adoCfg.Team, pat)
 	state := StateForLane(adoCfg, newLane)
-	return client.UpdateWorkItemState(t.ADOItemID, state)
+	if err := client.UpdateWorkItemState(t.ADOItemID, state); err != nil {
+		return fmt.Errorf("updating work item %d state: %w", t.ADOItemID, err)
+	}
+	return nil
 }
 
 func UpdateRemoteTitle(adoCfg *config.AzureDevOpsConfig, pat string, t *task.Task, title string) error {
@@ -270,7 +273,10 @@ func UpdateRemoteTitle(adoCfg *config.AzureDevOpsConfig, pat string, t *task.Tas
 		return fmt.Errorf("task %q has no ADO item ID", t.ID)
 	}
 	client := NewClient(adoCfg.Org, adoCfg.Project, adoCfg.Team, pat)
-	return client.UpdateWorkItemTitle(t.ADOItemID, title)
+	if err := client.UpdateWorkItemTitle(t.ADOItemID, title); err != nil {
+		return fmt.Errorf("updating work item %d title: %w", t.ADOItemID, err)
+	}
+	return nil
 }
 
 // UpdateRemoteTitleAndDescription pushes an edited title and plain-text
@@ -281,7 +287,10 @@ func UpdateRemoteTitleAndDescription(adoCfg *config.AzureDevOpsConfig, pat strin
 		return fmt.Errorf("task %q has no ADO item ID", t.ID)
 	}
 	client := NewClient(adoCfg.Org, adoCfg.Project, adoCfg.Team, pat)
-	return client.UpdateWorkItemTitleAndDescription(t.ADOItemID, title, htmlizeText(description))
+	if err := client.UpdateWorkItemTitleAndDescription(t.ADOItemID, title, htmlizeText(description)); err != nil {
+		return fmt.Errorf("updating work item %d title and description: %w", t.ADOItemID, err)
+	}
+	return nil
 }
 
 func htmlizeText(s string) string {

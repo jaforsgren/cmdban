@@ -7,6 +7,36 @@ import (
 	"cmdban/internal/task"
 )
 
+func TestPushStateChangeRejectsTaskWithoutADOItemID(t *testing.T) {
+	cfg := &config.AzureDevOpsConfig{Org: "org", Project: "proj", Team: "team"}
+	tk := &task.Task{ID: "local-1"}
+
+	err := PushStateChange(cfg, "pat", tk, task.StatusToday)
+	if err == nil {
+		t.Fatal("PushStateChange() error = nil, want an error for a task with no ADO item ID")
+	}
+}
+
+func TestUpdateRemoteTitleRejectsTaskWithoutADOItemID(t *testing.T) {
+	cfg := &config.AzureDevOpsConfig{Org: "org", Project: "proj", Team: "team"}
+	tk := &task.Task{ID: "local-1"}
+
+	err := UpdateRemoteTitle(cfg, "pat", tk, "new title")
+	if err == nil {
+		t.Fatal("UpdateRemoteTitle() error = nil, want an error for a task with no ADO item ID")
+	}
+}
+
+func TestUpdateRemoteTitleAndDescriptionRejectsTaskWithoutADOItemID(t *testing.T) {
+	cfg := &config.AzureDevOpsConfig{Org: "org", Project: "proj", Team: "team"}
+	tk := &task.Task{ID: "local-1"}
+
+	err := UpdateRemoteTitleAndDescription(cfg, "pat", tk, "new title", "new description")
+	if err == nil {
+		t.Fatal("UpdateRemoteTitleAndDescription() error = nil, want an error for a task with no ADO item ID")
+	}
+}
+
 func TestWorkItemToTaskCarriesParentID(t *testing.T) {
 	cfg := &config.AzureDevOpsConfig{
 		ColumnMap: map[string]string{"today": "Active"},
