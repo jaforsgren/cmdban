@@ -68,20 +68,20 @@ var DefaultKeyMap = KeyMap{
 		key.WithHelp("ctrl+f", "half page down"),
 	),
 	MoveLeft: key.NewBinding(
-		key.WithKeys("H", "ctrl+left", "ctrl+h"),
-		key.WithHelp("H/ctrl+h", "move task left"),
+		key.WithKeys("H", "shift+left"),
+		key.WithHelp("H/shift+←", "move task left"),
 	),
 	MoveRight: key.NewBinding(
-		key.WithKeys("L", "ctrl+right", "ctrl+l"),
-		key.WithHelp("L/ctrl+l", "move task right"),
+		key.WithKeys("L", "shift+right"),
+		key.WithHelp("L/shift+→", "move task right"),
 	),
 	OrderUp: key.NewBinding(
-		key.WithKeys("ctrl+k"),
-		key.WithHelp("ctrl+k", "move task up"),
+		key.WithKeys("ctrl+k", "shift+up"),
+		key.WithHelp("ctrl+k/shift+↑", "move task up"),
 	),
 	OrderDown: key.NewBinding(
-		key.WithKeys("ctrl+j"),
-		key.WithHelp("ctrl+j", "move task down"),
+		key.WithKeys("ctrl+j", "shift+down"),
+		key.WithHelp("ctrl+j/shift+↓", "move task down"),
 	),
 	New: key.NewBinding(
 		key.WithKeys("a"),

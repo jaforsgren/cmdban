@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"hash/fnv"
 	"os"
 	"os/exec"
 	"strings"
@@ -1059,6 +1060,7 @@ func (m Model) moveTaskLeft() (tea.Model, tea.Cmd) {
 	newLane := m.board.Lanes[m.activeLane-1]
 	m.board.MoveTask(t, newLane)
 	m.activeLane--
+	m.clampSelection()
 
 	if m.config.IsADOBoard() {
 		return m, m.pushADOStateChange(t, newLane)
@@ -1081,6 +1083,7 @@ func (m Model) moveTaskRight() (tea.Model, tea.Cmd) {
 	newLane := m.board.Lanes[m.activeLane+1]
 	m.board.MoveTask(t, newLane)
 	m.activeLane++
+	m.clampSelection()
 
 	if m.config.IsADOBoard() {
 		return m, m.pushADOStateChange(t, newLane)
@@ -1358,8 +1361,10 @@ func (m Model) computeLaneWidths() []int {
 	for i, status := range m.board.Lanes {
 		if m.minimizedLanes[status] {
 			statusName := strings.ToUpper(string(status))
-			// width - 4 must be >= len(statusName), so width = len(statusName) + 4
-			w := len(statusName) + 4
+			// Header text sits inside the lane's Width(width-4) box, which itself
+			// has 2 cols of horizontal padding (LaneHeaderStyle), so the text area
+			// is width-6; it must be >= len(statusName) or the header wraps.
+			w := len(statusName) + 6
 			widths[i] = w
 			minimizedOuterTotal += w + laneOverhead
 		}
@@ -1443,10 +1448,11 @@ func (m Model) renderLane(index int, status task.Status, width int, minimized bo
 			Render("(empty)")
 		taskViews = append(taskViews, empty)
 	} else {
+		groupColors := tagGroupColors(tasks)
 		rendered := make([]string, len(tasks))
 		for i, t := range tasks {
 			isSelected := isActive && i == m.activeTask
-			rendered[i] = m.renderTask(t, isSelected, width-4)
+			rendered[i] = m.renderTask(t, isSelected, width-4, groupColors[i])
 		}
 
 		activeIdx := 0
@@ -1512,7 +1518,68 @@ func laneScrollWindow(rendered []string, activeIdx, availableHeight int) (visibl
 	return rendered[start:end], start, len(rendered) - end
 }
 
-func (m Model) renderTask(t *task.Task, selected bool, width int) string {
+// tagGroupColors returns, for each task in order, the color of the vertical
+// group bar to render beside it. Adjacent tasks sharing a tag are considered
+// one group and get a matching bar color; a task with no adjacent match gets
+// an empty color (no bar). Grouping is purely visual and does not affect
+// ordering or selection.
+func tagGroupColors(tasks []*task.Task) []lipgloss.Color {
+	colors := make([]lipgloss.Color, len(tasks))
+	for i := range tasks {
+		var tag string
+		if i > 0 {
+			tag = sharedTag(tasks[i-1], tasks[i])
+		}
+		if tag == "" && i < len(tasks)-1 {
+			tag = sharedTag(tasks[i], tasks[i+1])
+		}
+		if tag != "" {
+			colors[i] = tagBarColor(tag)
+		}
+	}
+	return colors
+}
+
+// ungroupableTags are work-item-type tags that are too common to signal a
+// meaningful visual grouping (most tasks in a lane may share one).
+var ungroupableTags = map[string]bool{
+	"user-story": true,
+	"feature":    true,
+	"epic":       true,
+}
+
+// sharedTag returns a tag common to both tasks, or "" if none.
+func sharedTag(a, b *task.Task) string {
+	for _, ta := range a.Tags {
+		if ungroupableTags[ta] {
+			continue
+		}
+		for _, tb := range b.Tags {
+			if ta == tb {
+				return ta
+			}
+		}
+	}
+	return ""
+}
+
+var tagBarPalette = []lipgloss.Color{
+	lipgloss.Color("#db6a39"),
+	lipgloss.Color("#38b555"),
+	lipgloss.Color("#4a9eda"),
+	lipgloss.Color("#c39bd3"),
+	lipgloss.Color("#e6c229"),
+}
+
+// tagBarColor deterministically maps a tag name to a palette color so the
+// same tag always renders with the same group bar color.
+func tagBarColor(tag string) lipgloss.Color {
+	h := fnv.New32a()
+	h.Write([]byte(tag))
+	return tagBarPalette[h.Sum32()%uint32(len(tagBarPalette))]
+}
+
+func (m Model) renderTask(t *task.Task, selected bool, width int, groupColor lipgloss.Color) string {
 	isDone := t.Status == task.StatusDone
 
 	var style lipgloss.Style
@@ -1531,6 +1598,10 @@ func (m Model) renderTask(t *task.Task, selected bool, width int) string {
 		style = TaskStyle
 	}
 
+	// Reserve the last column for the tag-group bar so all rows in a lane
+	// stay aligned whether or not they carry a bar.
+	contentWidth := width - 1
+
 	prefix := ""
 	if t.Marked {
 		prefix = "✓ "
@@ -1542,8 +1613,8 @@ func (m Model) renderTask(t *task.Task, selected bool, width int) string {
 	}
 
 	title := prefix + t.Title
-	if len(title) > width-2 {
-		title = title[:width-5] + "..."
+	if len(title) > contentWidth-2 {
+		title = title[:contentWidth-5] + "..."
 	}
 
 	var tags string
@@ -1564,7 +1635,25 @@ func (m Model) renderTask(t *task.Task, selected bool, width int) string {
 			Render(fmt.Sprintf(" %d/%d", t.CheckboxDone, t.CheckboxTotal))
 	}
 
-	return style.Width(width).Render(title + adoBadge + tags + checkboxCounter)
+	box := style.Width(contentWidth).Render(title + adoBadge + tags + checkboxCounter)
+
+	barChar := " "
+	barStyle := lipgloss.NewStyle()
+	if groupColor != "" {
+		barChar = "│"
+		barStyle = barStyle.Foreground(groupColor)
+	}
+
+	// Span the bar across every line of the box, since tags can wrap a task
+	// onto multiple lines.
+	height := lipgloss.Height(box)
+	barLines := make([]string, height)
+	for i := range barLines {
+		barLines[i] = barStyle.Render(barChar)
+	}
+	bar := strings.Join(barLines, "\n")
+
+	return lipgloss.JoinHorizontal(lipgloss.Top, box, bar)
 }
 
 func (m Model) renderFooter() string {
@@ -1759,8 +1848,8 @@ func (m Model) renderHelp() string {
   k/↑      up                   ctrl+d  delete task
   gg       top of lane          t       add tag
   G        bottom of lane       m       mark task
-  ctrl+u   half page up         H       move task left
-  ctrl+f   half page down       L       move task right
+  ctrl+u   half page up         H/shift+← move task left
+  ctrl+f   half page down       L/shift+→ move task right
                                 enter   view task
 
   MISC                          COMMANDS
