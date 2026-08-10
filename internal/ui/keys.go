@@ -29,6 +29,7 @@ type KeyMap struct {
 	Filter     key.Binding
 	Refresh    key.Binding
 	OpenEditor key.Binding
+	OpenURL    key.Binding
 	Tag        key.Binding
 	Boards         key.Binding
 	CollapseColumn key.Binding
@@ -139,6 +140,10 @@ var DefaultKeyMap = KeyMap{
 		key.WithKeys("ctrl+g"),
 		key.WithHelp("ctrl+g", "open in editor"),
 	),
+	OpenURL: key.NewBinding(
+		key.WithKeys("ctrl+o"),
+		key.WithHelp("ctrl+o", "open url in browser"),
+	),
 	Tag: key.NewBinding(
 		key.WithKeys("t"),
 		key.WithHelp("t", "add tag"),
@@ -165,5 +170,6 @@ func (k KeyMap) FullHelp() [][]key.Binding {
 		{k.New, k.Edit, k.ToggleDone, k.Delete},
 		{k.Mark, k.Tag, k.Search, k.Filter, k.Refresh},
 		{k.Settings, k.Help, k.Quit, k.Boards, k.CollapseColumn},
+		{k.OpenEditor, k.OpenURL},
 	}
 }

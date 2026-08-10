@@ -5,6 +5,8 @@ import (
 	"hash/fnv"
 	"os"
 	"os/exec"
+	"regexp"
+	"runtime"
 	"strings"
 	"time"
 
@@ -21,6 +23,8 @@ import (
 	"cmdban/internal/pat"
 	"cmdban/internal/task"
 )
+
+var urlRegex = regexp.MustCompile(`https?://[^\s)\]]+`)
 
 type Mode int
 
@@ -465,6 +469,10 @@ func (m Model) handleNormalMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.gPressed = false
 		return m, nil
 
+	case key.Matches(msg, m.keys.OpenURL):
+		m.gPressed = false
+		return m.openTaskURL()
+
 	default:
 		m.gPressed = false
 	}
@@ -665,6 +673,9 @@ func (m Model) handleViewMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, m.openInEditor(t.FilePath)
 		}
 		return m, nil
+
+	case key.Matches(msg, m.keys.OpenURL):
+		return m.openTaskURL()
 
 	case key.Matches(msg, m.keys.Refresh):
 		if m.config.IsADOBoard() {
@@ -1046,6 +1057,61 @@ func (m Model) openInEditor(filePath string) tea.Cmd {
 	return tea.ExecProcess(c, func(err error) tea.Msg {
 		return editorFinishedMsg{filePath: filePath}
 	})
+}
+
+func (m Model) openTaskURL() (tea.Model, tea.Cmd) {
+	t := m.selectedTask()
+	if t == nil {
+		return m, nil
+	}
+
+	url, ok := m.taskURL(t)
+	if !ok {
+		m.message = "No URL found for this task"
+		return m, nil
+	}
+
+	if err := openURLInBrowser(url); err != nil {
+		m.message = "Failed to open URL: " + err.Error()
+		m.logs.Error(m.message)
+		return m, nil
+	}
+
+	m.message = "Opened " + url
+	return m, nil
+}
+
+// taskURL resolves the URL to open for a task: for Azure DevOps boards it is
+// the constructed work item link, otherwise it is the first http(s) URL
+// found in the task description.
+func (m Model) taskURL(t *task.Task) (string, bool) {
+	if m.config.IsADOBoard() {
+		board := m.config.ActiveBoard()
+		if board == nil || board.AzureDevOps == nil || t.ADOItemID == 0 {
+			return "", false
+		}
+		return fmt.Sprintf("https://dev.azure.com/%s/%s/_workitems/edit/%d",
+			board.AzureDevOps.Org, board.AzureDevOps.Project, t.ADOItemID), true
+	}
+
+	match := urlRegex.FindString(t.Description)
+	if match == "" {
+		return "", false
+	}
+	return match, true
+}
+
+func openURLInBrowser(url string) error {
+	var c *exec.Cmd
+	switch runtime.GOOS {
+	case "darwin":
+		c = exec.Command("open", url)
+	case "windows":
+		c = exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
+	default:
+		c = exec.Command("xdg-open", url)
+	}
+	return c.Start()
 }
 
 func (m Model) openConfigInEditor() tea.Cmd {

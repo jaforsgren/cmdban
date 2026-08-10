@@ -17,6 +17,75 @@ func keyMsgFor(s string) tea.KeyMsg {
 	return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)}
 }
 
+func TestTaskURLLocalBoardFindsFirstLink(t *testing.T) {
+	m := NewModel(&config.Config{})
+	tk := &task.Task{
+		Description: "see notes\nmore info at https://example.com/doc and http://other.example/page",
+	}
+
+	got, ok := m.taskURL(tk)
+	if !ok {
+		t.Fatalf("taskURL() ok = false, want true")
+	}
+	if want := "https://example.com/doc"; got != want {
+		t.Fatalf("taskURL() = %q, want %q", got, want)
+	}
+}
+
+func TestTaskURLLocalBoardNoLink(t *testing.T) {
+	m := NewModel(&config.Config{})
+	tk := &task.Task{Description: "no links here"}
+
+	if _, ok := m.taskURL(tk); ok {
+		t.Fatalf("taskURL() ok = true, want false")
+	}
+}
+
+func TestTaskURLADOBoardConstructsWorkItemLink(t *testing.T) {
+	cfg := &config.Config{
+		CurrentBoard: "ado",
+		Boards: []config.Board{
+			{
+				Name: "ado",
+				Type: config.BoardTypeAzureDevOps,
+				AzureDevOps: &config.AzureDevOpsConfig{
+					Org:     "lfantdevelophub",
+					Project: "common",
+				},
+			},
+		},
+	}
+	m := NewModel(cfg)
+	tk := &task.Task{ADOItemID: 1237}
+
+	got, ok := m.taskURL(tk)
+	if !ok {
+		t.Fatalf("taskURL() ok = false, want true")
+	}
+	if want := "https://dev.azure.com/lfantdevelophub/common/_workitems/edit/1237"; got != want {
+		t.Fatalf("taskURL() = %q, want %q", got, want)
+	}
+}
+
+func TestTaskURLADOBoardNoItemID(t *testing.T) {
+	cfg := &config.Config{
+		CurrentBoard: "ado",
+		Boards: []config.Board{
+			{
+				Name:        "ado",
+				Type:        config.BoardTypeAzureDevOps,
+				AzureDevOps: &config.AzureDevOpsConfig{Org: "org", Project: "proj"},
+			},
+		},
+	}
+	m := NewModel(cfg)
+	tk := &task.Task{}
+
+	if _, ok := m.taskURL(tk); ok {
+		t.Fatalf("taskURL() ok = true, want false")
+	}
+}
+
 func TestSharedGroupKeyPrefersADOParent(t *testing.T) {
 	a := &task.Task{Title: "a", ADOParentID: 42, Tags: []string{"backend"}}
 	b := &task.Task{Title: "b", ADOParentID: 42, Tags: []string{"frontend"}}
