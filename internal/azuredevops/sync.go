@@ -256,6 +256,18 @@ func workItemToTask(item WorkItem, cfg *config.AzureDevOpsConfig) *task.Task {
 	}
 }
 
+// FetchComments returns a work item's comments, wrapping the client's
+// Client construction the same way every other read/write helper in this
+// file does, so callers never construct a Client directly.
+func FetchComments(adoCfg *config.AzureDevOpsConfig, pat string, workItemID int) ([]Comment, error) {
+	client := NewClient(adoCfg.Org, adoCfg.Project, adoCfg.Team, pat)
+	comments, err := client.FetchComments(workItemID)
+	if err != nil {
+		return nil, fmt.Errorf("fetching comments for work item %d: %w", workItemID, err)
+	}
+	return comments, nil
+}
+
 func PushStateChange(adoCfg *config.AzureDevOpsConfig, pat string, t *task.Task, newLane task.Status) error {
 	if t.ADOItemID == 0 {
 		return fmt.Errorf("task %q has no ADO item ID", t.ID)

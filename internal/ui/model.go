@@ -1260,8 +1260,7 @@ func (m Model) fetchComments(workItemID int) tea.Cmd {
 		if !ok {
 			return errMsg{fmt.Errorf("PAT %q not found — run :pats to add it", adoCfg.PAT)}
 		}
-		client := azuredevops.NewClient(adoCfg.Org, adoCfg.Project, adoCfg.Team, token)
-		comments, err := client.FetchComments(workItemID)
+		comments, err := azuredevops.FetchComments(adoCfg, token, workItemID)
 		if err != nil {
 			return errMsg{err}
 		}
