@@ -2,6 +2,7 @@ package azuredevops
 
 import (
 	"encoding/json"
+	"net/url"
 	"reflect"
 	"testing"
 )
@@ -19,6 +20,44 @@ func TestDedupeIntsEmpty(t *testing.T) {
 	got := dedupeInts(nil)
 	if len(got) != 0 {
 		t.Fatalf("dedupeInts(nil) = %v, want empty", got)
+	}
+}
+
+func TestBaseURLEscapesSpecialCharacters(t *testing.T) {
+	c := NewClient("R&D Org", "Proj#1", "Team?A", "pat")
+
+	got := c.baseURL()
+	want := "https://dev.azure.com/R&D%20Org/Proj%231"
+	if got != want {
+		t.Fatalf("baseURL() = %q, want %q", got, want)
+	}
+}
+
+func TestTeamURLEscapesSpecialCharacters(t *testing.T) {
+	c := NewClient("R&D Org", "Proj#1", "Team?A", "pat")
+
+	got := c.teamURL()
+	want := "https://dev.azure.com/R&D%20Org/Proj%231/Team%3FA"
+	if got != want {
+		t.Fatalf("teamURL() = %q, want %q", got, want)
+	}
+}
+
+// TestBaseURLEscapesStayValidWhenParsed guards against the actual bug: a #
+// or ? in an org/project name must not be interpreted as a fragment/query
+// delimiter once escaped and parsed by net/http.
+func TestBaseURLEscapesStayValidWhenParsed(t *testing.T) {
+	c := NewClient("org", "Proj#1?A", "team", "pat")
+
+	parsed, err := url.Parse(c.baseURL() + "/_apis/wit/wiql?api-version=7.0")
+	if err != nil {
+		t.Fatalf("url.Parse() error = %v", err)
+	}
+	if parsed.Path != "/org/Proj#1?A/_apis/wit/wiql" {
+		t.Fatalf("parsed.Path = %q, want the full escaped path preserved", parsed.Path)
+	}
+	if parsed.RawQuery != "api-version=7.0" {
+		t.Fatalf("parsed.RawQuery = %q, want only the real query string", parsed.RawQuery)
 	}
 }
 

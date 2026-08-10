@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -40,7 +41,13 @@ func (c *Client) authHeader() string {
 }
 
 func (c *Client) baseURL() string {
-	return fmt.Sprintf("https://dev.azure.com/%s/%s", c.org, c.project)
+	return fmt.Sprintf("https://dev.azure.com/%s/%s", url.PathEscape(c.org), url.PathEscape(c.project))
+}
+
+// teamURL is baseURL with the team segment appended, for the team-scoped
+// endpoints (iterations, backlogs).
+func (c *Client) teamURL() string {
+	return fmt.Sprintf("%s/%s", c.baseURL(), url.PathEscape(c.team))
 }
 
 func (c *Client) get(url string, out any) error {
@@ -137,12 +144,12 @@ func (c *Client) patchJSON(url, contentType string, payload, out any) error {
 }
 
 func (c *Client) ListIterations() ([]Iteration, error) {
-	url := fmt.Sprintf(
-		"https://dev.azure.com/%s/%s/%s/_apis/work/teamsettings/iterations?api-version=%s",
-		c.org, c.project, c.team, apiVersion,
+	iterationsURL := fmt.Sprintf(
+		"%s/_apis/work/teamsettings/iterations?api-version=%s",
+		c.teamURL(), apiVersion,
 	)
 	var resp IterationListResponse
-	if err := c.get(url, &resp); err != nil {
+	if err := c.get(iterationsURL, &resp); err != nil {
 		return nil, err
 	}
 	return resp.Value, nil
@@ -150,8 +157,8 @@ func (c *Client) ListIterations() ([]Iteration, error) {
 
 func (c *Client) CurrentIterationPath() (string, error) {
 	currentURL := fmt.Sprintf(
-		"https://dev.azure.com/%s/%s/%s/_apis/work/teamsettings/iterations?$timeframe=current&api-version=%s",
-		c.org, c.project, c.team, apiVersion,
+		"%s/_apis/work/teamsettings/iterations?$timeframe=current&api-version=%s",
+		c.teamURL(), apiVersion,
 	)
 	var current IterationListResponse
 	if err := c.get(currentURL, &current); err != nil {
@@ -163,8 +170,8 @@ func (c *Client) CurrentIterationPath() (string, error) {
 
 	// Between sprints: fall back to the most recently started past iteration.
 	pastURL := fmt.Sprintf(
-		"https://dev.azure.com/%s/%s/%s/_apis/work/teamsettings/iterations?$timeframe=past&api-version=%s",
-		c.org, c.project, c.team, apiVersion,
+		"%s/_apis/work/teamsettings/iterations?$timeframe=past&api-version=%s",
+		c.teamURL(), apiVersion,
 	)
 	var past IterationListResponse
 	if err := c.get(pastURL, &past); err != nil {
@@ -178,12 +185,12 @@ func (c *Client) CurrentIterationPath() (string, error) {
 }
 
 func (c *Client) ListBacklogs() ([]Backlog, error) {
-	url := fmt.Sprintf(
-		"https://dev.azure.com/%s/%s/%s/_apis/work/backlogs?api-version=%s",
-		c.org, c.project, c.team, apiVersion,
+	backlogsURL := fmt.Sprintf(
+		"%s/_apis/work/backlogs?api-version=%s",
+		c.teamURL(), apiVersion,
 	)
 	var resp BacklogListResponse
-	if err := c.get(url, &resp); err != nil {
+	if err := c.get(backlogsURL, &resp); err != nil {
 		return nil, err
 	}
 	return resp.Value, nil
@@ -193,12 +200,12 @@ func (c *Client) ListBacklogs() ([]Backlog, error) {
 // level, in backlog order. Unlike sprint boards, backlog levels aren't
 // scoped to a team iteration.
 func (c *Client) FetchBacklogWorkItemIDs(backlogID string) ([]int, error) {
-	url := fmt.Sprintf(
-		"https://dev.azure.com/%s/%s/%s/_apis/work/backlogs/%s/workItems?api-version=%s",
-		c.org, c.project, c.team, backlogID, apiVersion,
+	itemsURL := fmt.Sprintf(
+		"%s/_apis/work/backlogs/%s/workItems?api-version=%s",
+		c.teamURL(), url.PathEscape(backlogID), apiVersion,
 	)
 	var resp BacklogWorkItemsResponse
-	if err := c.get(url, &resp); err != nil {
+	if err := c.get(itemsURL, &resp); err != nil {
 		return nil, err
 	}
 	ids := make([]int, len(resp.WorkItems))
@@ -352,8 +359,7 @@ func (c *Client) UpdateWorkItemTitleAndDescription(id int, title, description st
 }
 
 func (c *Client) CreateWorkItem(workItemType, title, state, iterationPath string) (*WorkItem, error) {
-	encodedType := strings.ReplaceAll(workItemType, " ", "%20")
-	url := fmt.Sprintf("%s/_apis/wit/workitems/$%s?api-version=%s", c.baseURL(), encodedType, apiVersion)
+	createURL := fmt.Sprintf("%s/_apis/wit/workitems/$%s?api-version=%s", c.baseURL(), url.PathEscape(workItemType), apiVersion)
 
 	ops := []PatchOperation{
 		{Op: "add", Path: "/fields/System.Title", Value: title},
@@ -362,7 +368,7 @@ func (c *Client) CreateWorkItem(workItemType, title, state, iterationPath string
 	}
 
 	var item WorkItem
-	if err := c.patchJSON(url, "application/json-patch+json", ops, &item); err != nil {
+	if err := c.patchJSON(createURL, "application/json-patch+json", ops, &item); err != nil {
 		return nil, err
 	}
 	return &item, nil

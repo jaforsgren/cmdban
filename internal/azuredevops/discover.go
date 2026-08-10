@@ -3,6 +3,7 @@ package azuredevops
 import (
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -50,10 +51,10 @@ func DiscoverOrganizations(pat string) ([]string, error) {
 
 func DiscoverProjects(org, pat string) ([]string, error) {
 	c := NewClient(org, "", "", pat)
-	url := fmt.Sprintf("https://dev.azure.com/%s/_apis/projects?$top=200&api-version=%s", org, apiVersion)
+	projectsURL := fmt.Sprintf("https://dev.azure.com/%s/_apis/projects?$top=200&api-version=%s", url.PathEscape(org), apiVersion)
 
 	var resp ProjectListResponse
-	if err := c.get(url, &resp); err != nil {
+	if err := c.get(projectsURL, &resp); err != nil {
 		return nil, fmt.Errorf("fetching projects: %w", err)
 	}
 
@@ -67,10 +68,7 @@ func DiscoverProjects(org, pat string) ([]string, error) {
 func DiscoverBoardColumns(org, project, team, boardLevel, pat string) ([]BoardColumn, error) {
 	c := NewClient(org, project, team, pat)
 
-	boardsURL := fmt.Sprintf(
-		"https://dev.azure.com/%s/%s/%s/_apis/work/boards?api-version=%s",
-		org, project, team, apiVersion,
-	)
+	boardsURL := fmt.Sprintf("%s/_apis/work/boards?api-version=%s", c.teamURL(), apiVersion)
 	var boards KanbanBoardListResponse
 	if err := c.get(boardsURL, &boards); err != nil {
 		return nil, fmt.Errorf("fetching boards: %w", err)
@@ -88,8 +86,8 @@ func DiscoverBoardColumns(org, project, team, boardLevel, pat string) ([]BoardCo
 	}
 
 	columnsURL := fmt.Sprintf(
-		"https://dev.azure.com/%s/%s/%s/_apis/work/boards/%s/columns?api-version=%s",
-		org, project, team, boardID, apiVersion,
+		"%s/_apis/work/boards/%s/columns?api-version=%s",
+		c.teamURL(), url.PathEscape(boardID), apiVersion,
 	)
 	var columns BoardColumnListResponse
 	if err := c.get(columnsURL, &columns); err != nil {
@@ -119,13 +117,13 @@ func DiscoverBacklogs(org, project, team, pat string) ([]Backlog, error) {
 
 func DiscoverTeams(org, project, pat string) ([]string, error) {
 	c := NewClient(org, project, "", pat)
-	url := fmt.Sprintf(
+	teamsURL := fmt.Sprintf(
 		"https://dev.azure.com/%s/_apis/projects/%s/teams?$top=200&api-version=%s",
-		org, project, apiVersion,
+		url.PathEscape(org), url.PathEscape(project), apiVersion,
 	)
 
 	var resp TeamListResponse
-	if err := c.get(url, &resp); err != nil {
+	if err := c.get(teamsURL, &resp); err != nil {
 		return nil, fmt.Errorf("fetching teams: %w", err)
 	}
 
