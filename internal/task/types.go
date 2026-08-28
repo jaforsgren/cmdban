@@ -20,6 +20,7 @@ type Task struct {
 	ID              string
 	Title           string
 	Description     string
+	ReproSteps      string
 	Status          Status
 	Tags            []string
 	Priority        int

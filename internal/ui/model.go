@@ -1638,11 +1638,17 @@ func (m Model) handleMoveBoardMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 // resolveTargetStatus maps a task's current status onto a matching column
-// name on the target board, falling back to the target's first column (or
-// backlog) when there is no name match.
+// name on the target board, falling back to the target's own backlog column
+// (or the target's first column, or the default backlog status) when the
+// task's lane doesn't exist there.
 func resolveTargetStatus(target *config.Board, status task.Status) task.Status {
 	for _, col := range target.Columns {
 		if strings.EqualFold(col.Name, string(status)) {
+			return task.Status(col.Name)
+		}
+	}
+	for _, col := range target.Columns {
+		if strings.EqualFold(col.Name, string(task.StatusBacklog)) {
 			return task.Status(col.Name)
 		}
 	}
@@ -2450,6 +2456,10 @@ func (m Model) renderADOTaskDetailPane(t *task.Task, width int, footerHint strin
 	desc := t.Description
 	if desc == "" {
 		desc = lipgloss.NewStyle().Foreground(SubtleColor).Italic(true).Render("(no description)")
+	}
+	if t.ReproSteps != "" {
+		reproHeading := lipgloss.NewStyle().Bold(true).Foreground(HighlightColor).Render("Repro Steps")
+		desc += "\n\n" + reproHeading + "\n" + t.ReproSteps
 	}
 
 	lines := strings.Split(desc, "\n")

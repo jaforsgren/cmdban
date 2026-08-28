@@ -259,11 +259,16 @@ func CopyTaskToDirectory(t *Task, dir string, status Status) (*Task, error) {
 	}
 	path := filepath.Join(dir, filename)
 
+	description := t.Description
+	if t.ReproSteps != "" {
+		description = strings.TrimSpace(description + "\n\n## Repro Steps\n\n" + t.ReproSteps)
+	}
+
 	now := time.Now()
 	newTask := &Task{
 		ID:            filename,
 		Title:         t.Title,
-		Description:   t.Description,
+		Description:   description,
 		Status:        status,
 		Tags:          slices.Clone(t.Tags),
 		Priority:      t.Priority,

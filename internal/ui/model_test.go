@@ -385,6 +385,33 @@ func TestStartMoveBoardEntersMoveBoardMode(t *testing.T) {
 	}
 }
 
+func TestResolveTargetStatusMatchesByName(t *testing.T) {
+	target := &config.Board{Columns: []config.Column{{Name: "today"}, {Name: "backlog"}}}
+
+	got := resolveTargetStatus(target, task.StatusToday)
+	if got != task.StatusToday {
+		t.Fatalf("resolveTargetStatus() = %q, want %q", got, task.StatusToday)
+	}
+}
+
+func TestResolveTargetStatusFallsBackToBacklog(t *testing.T) {
+	target := &config.Board{Columns: []config.Column{{Name: "doing"}, {Name: "backlog"}, {Name: "done"}}}
+
+	got := resolveTargetStatus(target, task.StatusTomorrow)
+	if got != task.StatusBacklog {
+		t.Fatalf("resolveTargetStatus() = %q, want %q", got, task.StatusBacklog)
+	}
+}
+
+func TestResolveTargetStatusFallsBackToFirstColumnWithoutBacklog(t *testing.T) {
+	target := &config.Board{Columns: []config.Column{{Name: "doing"}, {Name: "done"}}}
+
+	got := resolveTargetStatus(target, task.StatusTomorrow)
+	if got != task.Status("doing") {
+		t.Fatalf("resolveTargetStatus() = %q, want %q", got, "doing")
+	}
+}
+
 func TestMoveTaskToBoardMovesFileToDestination(t *testing.T) {
 	cfg, sourceDir, destDir := twoLocalBoardConfig(t)
 	m := NewModel(cfg)

@@ -220,6 +220,7 @@ func workItemToTask(item WorkItem, cfg *config.AzureDevOpsConfig) *task.Task {
 	f := item.Fields
 	lane := laneForState(cfg, f.State)
 	desc := stripHTML(f.Description)
+	reproSteps := stripHTML(f.ReproSteps)
 
 	var assignee string
 	if f.AssignedTo != nil {
@@ -245,6 +246,7 @@ func workItemToTask(item WorkItem, cfg *config.AzureDevOpsConfig) *task.Task {
 		ID:              fmt.Sprintf("ado-%d", f.ID),
 		Title:           f.Title,
 		Description:     desc,
+		ReproSteps:      reproSteps,
 		Status:          lane,
 		Tags:            tags,
 		FilePath:        "",

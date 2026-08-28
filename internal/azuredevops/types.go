@@ -35,6 +35,7 @@ type WorkItemFields struct {
 	Title         string       `json:"System.Title"`
 	State         string       `json:"System.State"`
 	Description   string       `json:"System.Description"`
+	ReproSteps    string       `json:"Microsoft.VSTS.TCM.ReproSteps"`
 	Tags          string       `json:"System.Tags"`
 	WorkItemType  string       `json:"System.WorkItemType"`
 	AssignedTo    *IdentityRef `json:"System.AssignedTo"`
