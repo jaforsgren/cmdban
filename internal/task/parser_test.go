@@ -229,7 +229,7 @@ func TestCopyTaskToDirectory(t *testing.T) {
 
 	destDir := t.TempDir()
 
-	copied, err := CopyTaskToDirectory(source, destDir, StatusBacklog)
+	copied, err := CopyTaskToDirectory(source, destDir, StatusBacklog, "")
 	if err != nil {
 		t.Fatalf("CopyTaskToDirectory failed: %v", err)
 	}
@@ -263,6 +263,23 @@ func TestCopyTaskToDirectory(t *testing.T) {
 	}
 	if reparsed.Status != StatusBacklog || reparsed.Title != source.Title {
 		t.Error("written file should round-trip the copied task's fields")
+	}
+}
+
+func TestCopyTaskToDirectoryAppendsSourceURL(t *testing.T) {
+	source := &Task{Title: "From ADO", Description: "original description"}
+	destDir := t.TempDir()
+
+	copied, err := CopyTaskToDirectory(source, destDir, StatusBacklog, "https://dev.azure.com/org/proj/_workitems/edit/42")
+	if err != nil {
+		t.Fatalf("CopyTaskToDirectory failed: %v", err)
+	}
+
+	if !strings.Contains(copied.Description, "original description") {
+		t.Error("expected copied description to keep the original text")
+	}
+	if !strings.Contains(copied.Description, "https://dev.azure.com/org/proj/_workitems/edit/42") {
+		t.Errorf("expected copied description to include the source URL, got %q", copied.Description)
 	}
 }
 

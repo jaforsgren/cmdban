@@ -3,6 +3,7 @@ package ui
 import (
 	"errors"
 	"os"
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -480,5 +481,53 @@ func TestMoveTaskToADOBoardIsUnsupported(t *testing.T) {
 	}
 	if _, err := os.Stat(created.FilePath); err != nil {
 		t.Fatalf("expected source file to remain untouched: %v", err)
+	}
+}
+
+func TestMoveTaskFromADOBoardAddsSourceLinkToDescription(t *testing.T) {
+	destDir := t.TempDir()
+	cfg := &config.Config{
+		CurrentBoard: "ado",
+		Boards: []config.Board{
+			{
+				Name: "ado",
+				Type: config.BoardTypeAzureDevOps,
+				AzureDevOps: &config.AzureDevOpsConfig{
+					Org:     "lfantdevelophub",
+					Project: "common",
+				},
+			},
+			{Name: "dest", Directory: destDir, Columns: []config.Column{{Name: "backlog"}}},
+		},
+	}
+	m := NewModel(cfg)
+
+	adoTask := &task.Task{ID: "ado-42", Title: "Bug", Description: "steps to reproduce", Status: task.StatusToday, ADOItemID: 42}
+	m.board.AddTask(adoTask)
+
+	got, cmd := m.moveTaskToBoard(&cfg.Boards[1])
+	if _, ok := got.(Model); !ok {
+		t.Fatalf("moveTaskToBoard() model = %T, want Model", got)
+	}
+	if cmd == nil {
+		t.Fatalf("cmd = nil, want a move command")
+	}
+
+	if _, ok := cmd().(taskMovedMsg); !ok {
+		t.Fatalf("cmd() did not return taskMovedMsg")
+	}
+
+	entries, err := os.ReadDir(destDir)
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("expected exactly one file in destination directory, got %v (err=%v)", entries, err)
+	}
+
+	copied, err := task.ParseMarkdownFile(destDir + "/" + entries[0].Name())
+	if err != nil {
+		t.Fatalf("ParseMarkdownFile failed: %v", err)
+	}
+	wantURL := "https://dev.azure.com/lfantdevelophub/common/_workitems/edit/42"
+	if !strings.Contains(copied.Description, wantURL) {
+		t.Errorf("copied description = %q, want it to contain %q", copied.Description, wantURL)
 	}
 }

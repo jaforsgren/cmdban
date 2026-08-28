@@ -244,8 +244,10 @@ func CreateNewTask(dir, title string) (*Task, error) {
 // CopyTaskToDirectory writes t's title, description, and metadata into a new
 // markdown file under dir, using a freshly generated ID and status. ADO
 // linkage fields are intentionally not copied, since moving a task to a
-// plain markdown board detaches it from Azure DevOps.
-func CopyTaskToDirectory(t *Task, dir string, status Status) (*Task, error) {
+// plain markdown board detaches it from Azure DevOps. When sourceURL is
+// non-empty, it is appended to the description as a link back to where the
+// task came from, since the copy otherwise carries no trace of its origin.
+func CopyTaskToDirectory(t *Task, dir string, status Status, sourceURL string) (*Task, error) {
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return nil, err
 	}
@@ -262,6 +264,9 @@ func CopyTaskToDirectory(t *Task, dir string, status Status) (*Task, error) {
 	description := t.Description
 	if t.ReproSteps != "" {
 		description = strings.TrimSpace(description + "\n\n## Repro Steps\n\n" + t.ReproSteps)
+	}
+	if sourceURL != "" {
+		description = strings.TrimSpace(description + "\n\nSource: " + sourceURL)
 	}
 
 	now := time.Now()

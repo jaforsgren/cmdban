@@ -1682,11 +1682,16 @@ func (m Model) moveTaskToBoard(target *config.Board) (tea.Model, tea.Cmd) {
 	targetName := target.Name
 	targetDir := target.Directory
 
+	var sourceURL string
+	if sourceIsADO {
+		sourceURL, _ = m.taskURL(t)
+	}
+
 	m.board.RemoveTask(t)
 	m.clampSelection()
 
 	return m, func() tea.Msg {
-		if _, err := task.CopyTaskToDirectory(t, targetDir, newStatus); err != nil {
+		if _, err := task.CopyTaskToDirectory(t, targetDir, newStatus, sourceURL); err != nil {
 			return errMsg{err}
 		}
 
