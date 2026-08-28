@@ -137,7 +137,11 @@ func WriteMarkdownFile(task *Task) error {
 	return os.WriteFile(task.FilePath, []byte(sb.String()), 0644)
 }
 
-func LoadTasksFromDirectory(dir string) ([]*Task, error) {
+// LoadTasksFromDirectory reads every markdown file in dir as a task, except
+// dotfiles, settings.md, and any name matching ignoreFiles (compared
+// case-insensitively) — for files that live alongside tasks but aren't
+// tasks themselves, such as a CLAUDE.md.
+func LoadTasksFromDirectory(dir string, ignoreFiles []string) ([]*Task, error) {
 	var tasks []*Task
 
 	entries, err := os.ReadDir(dir)
@@ -153,6 +157,9 @@ func LoadTasksFromDirectory(dir string) ([]*Task, error) {
 			continue
 		}
 		if strings.HasPrefix(entry.Name(), ".") || entry.Name() == "settings.md" {
+			continue
+		}
+		if isFileIgnored(entry.Name(), ignoreFiles) {
 			continue
 		}
 
@@ -179,6 +186,15 @@ func LoadTasksFromDirectory(dir string) ([]*Task, error) {
 	})
 
 	return tasks, nil
+}
+
+func isFileIgnored(filename string, ignoreFiles []string) bool {
+	for _, ignored := range ignoreFiles {
+		if strings.EqualFold(ignored, filename) {
+			return true
+		}
+	}
+	return false
 }
 
 func sanitizeTitle(title string) string {

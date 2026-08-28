@@ -17,6 +17,10 @@ const (
 
 var DefaultColumns = []string{"today", "tomorrow", "backlog", "done"}
 
+// DefaultIgnoreFiles lists markdown files that live alongside task files but
+// aren't tasks themselves, so they're excluded from every board by default.
+var DefaultIgnoreFiles = []string{"CLAUDE.md"}
+
 func DefaultConfigPath() string {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -48,7 +52,8 @@ func defaultConfig() *Config {
 				Columns:   columns,
 			},
 		},
-		configPath: DefaultConfigPath(),
+		IgnoreFiles: DefaultIgnoreFiles,
+		configPath:  DefaultConfigPath(),
 	}
 }
 
@@ -79,6 +84,10 @@ func Load() (*Config, error) {
 
 	if cfg.CurrentBoard == "" && len(cfg.Boards) > 0 {
 		cfg.CurrentBoard = cfg.Boards[0].Name
+	}
+
+	if cfg.IgnoreFiles == nil {
+		cfg.IgnoreFiles = DefaultIgnoreFiles
 	}
 
 	return cfg, nil
@@ -140,7 +149,8 @@ func migrateFromLegacy() (*Config, error) {
 				Columns:   columns,
 			},
 		},
-		configPath: DefaultConfigPath(),
+		IgnoreFiles: DefaultIgnoreFiles,
+		configPath:  DefaultConfigPath(),
 	}
 
 	if err := cfg.Save(); err != nil {

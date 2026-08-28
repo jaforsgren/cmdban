@@ -29,6 +29,67 @@ func TestLoadDefaultConfig(t *testing.T) {
 	if len(cfg.Boards) != 1 {
 		t.Errorf("Expected 1 board, got %d", len(cfg.Boards))
 	}
+
+	if len(cfg.IgnoreFiles) != 1 || cfg.IgnoreFiles[0] != "CLAUDE.md" {
+		t.Errorf("Expected default ignore_files [CLAUDE.md], got %v", cfg.IgnoreFiles)
+	}
+}
+
+func TestLoadExistingConfigWithoutIgnoreFilesDefaultsToClaudeMd(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, ConfigFileName)
+
+	content := `current_board: myboard
+boards:
+  - name: myboard
+    directory: /my/tasks/folder
+`
+
+	if err := os.WriteFile(configPath, []byte(content), 0644); err != nil {
+		t.Fatalf("Failed to create config file: %v", err)
+	}
+
+	oldHome := os.Getenv("HOME")
+	os.Setenv("HOME", tmpDir)
+	defer os.Setenv("HOME", oldHome)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Failed to load config: %v", err)
+	}
+
+	if len(cfg.IgnoreFiles) != 1 || cfg.IgnoreFiles[0] != "CLAUDE.md" {
+		t.Errorf("Expected ignore_files to default to [CLAUDE.md], got %v", cfg.IgnoreFiles)
+	}
+}
+
+func TestLoadExistingConfigRespectsExplicitEmptyIgnoreFiles(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, ConfigFileName)
+
+	content := `current_board: myboard
+boards:
+  - name: myboard
+    directory: /my/tasks/folder
+ignore_files: []
+`
+
+	if err := os.WriteFile(configPath, []byte(content), 0644); err != nil {
+		t.Fatalf("Failed to create config file: %v", err)
+	}
+
+	oldHome := os.Getenv("HOME")
+	os.Setenv("HOME", tmpDir)
+	defer os.Setenv("HOME", oldHome)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Failed to load config: %v", err)
+	}
+
+	if len(cfg.IgnoreFiles) != 0 {
+		t.Errorf("Expected an explicit empty ignore_files to stay empty, got %v", cfg.IgnoreFiles)
+	}
 }
 
 func TestSaveAndLoadConfig(t *testing.T) {

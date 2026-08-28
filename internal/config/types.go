@@ -33,8 +33,9 @@ type Board struct {
 }
 
 type Config struct {
-	CurrentBoard string  `yaml:"current_board"`
-	Boards       []Board `yaml:"boards"`
+	CurrentBoard string   `yaml:"current_board"`
+	Boards       []Board  `yaml:"boards"`
+	IgnoreFiles  []string `yaml:"ignore_files,omitempty"`
 	configPath   string
 }
 

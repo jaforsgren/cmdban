@@ -164,7 +164,7 @@ func (m Model) loadTasks() tea.Msg {
 	if m.config.IsADOBoard() {
 		return m.loadADOTasks()
 	}
-	tasks, err := task.LoadTasksFromDirectory(m.config.TaskDirectory())
+	tasks, err := task.LoadTasksFromDirectory(m.config.TaskDirectory(), m.config.IgnoreFiles)
 	if err != nil {
 		return errMsg{err}
 	}

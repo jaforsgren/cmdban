@@ -147,6 +147,7 @@ func TestLoadTasksFromDirectory(t *testing.T) {
 		{"task3.md", "# Task 3\n\n---\n@status:today"},
 		{".hidden.md", "# Hidden\n\n---\n@status:tomorrow"},
 		{"settings.md", "# Settings\n\ntask_directory: ./tasks"},
+		{"CLAUDE.md", "# Notes for agents\n\nDo not treat this as a task."},
 	}
 
 	for _, tc := range tasks {
@@ -156,13 +157,13 @@ func TestLoadTasksFromDirectory(t *testing.T) {
 		}
 	}
 
-	loaded, err := LoadTasksFromDirectory(tmpDir)
+	loaded, err := LoadTasksFromDirectory(tmpDir, []string{"CLAUDE.md"})
 	if err != nil {
 		t.Fatalf("LoadTasksFromDirectory failed: %v", err)
 	}
 
 	if len(loaded) != 3 {
-		t.Errorf("Expected 3 tasks (excluding hidden and settings), got %d", len(loaded))
+		t.Errorf("Expected 3 tasks (excluding hidden, settings, and CLAUDE.md), got %d", len(loaded))
 	}
 }
 
@@ -401,7 +402,7 @@ func TestLoadTasksOrderSorting(t *testing.T) {
 		}
 	}
 
-	tasks, err := LoadTasksFromDirectory(tmpDir)
+	tasks, err := LoadTasksFromDirectory(tmpDir, nil)
 	if err != nil {
 		t.Fatalf("LoadTasksFromDirectory failed: %v", err)
 	}
