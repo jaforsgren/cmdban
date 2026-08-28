@@ -43,6 +43,7 @@ const (
 	ModeADOSetup
 	ModeLogs
 	ModeComments
+	ModeFocus
 )
 
 type Model struct {
@@ -311,6 +312,10 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleCommentsMode(msg)
 	}
 
+	if m.mode == ModeFocus {
+		return m.handleFocusMode(msg)
+	}
+
 	return m.handleNormalMode(msg)
 }
 
@@ -496,6 +501,12 @@ func (m Model) handleNormalMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.CollapseColumn):
 		lane := m.board.Lanes[m.activeLane]
 		m.minimizedLanes[lane] = !m.minimizedLanes[lane]
+		m.gPressed = false
+		return m, nil
+
+	case key.Matches(msg, m.keys.Focus):
+		m.mode = ModeFocus
+		m.viewScroll = 0
 		m.gPressed = false
 		return m, nil
 
@@ -714,6 +725,197 @@ func (m Model) handleViewMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.openComments()
 
 	case key.Matches(msg, m.keys.Refresh):
+		if m.config.IsADOBoard() {
+			m.message = "Syncing with Azure DevOps..."
+		}
+		return m, m.loadTasks
+
+	default:
+		m.gPressed = false
+	}
+
+	return m, nil
+}
+
+// handleFocusMode drives the fullscreen focus layout: a wide read pane on
+// the left showing the selected task, and the active lane's list on the
+// right. Navigation moves the selection within the active lane (or switches
+// lanes), while every task action available in normal mode still works.
+func (m Model) handleFocusMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch {
+	case key.Matches(msg, m.keys.Escape), key.Matches(msg, m.keys.Focus), msg.String() == "q":
+		m.mode = ModeNormal
+		m.viewScroll = 0
+		m.gPressed = false
+		return m, nil
+
+	case key.Matches(msg, m.keys.Up):
+		m.activeTask--
+		m.clampSelection()
+		m.viewScroll = 0
+		m.gPressed = false
+		return m, nil
+
+	case key.Matches(msg, m.keys.Down):
+		m.activeTask++
+		m.clampSelection()
+		m.viewScroll = 0
+		m.gPressed = false
+		return m, nil
+
+	case key.Matches(msg, m.keys.Left):
+		m.activeLane--
+		if m.activeLane < 0 {
+			m.activeLane = len(m.board.Lanes) - 1
+		}
+		m.activeTask = 0
+		m.clampSelection()
+		m.viewScroll = 0
+		m.gPressed = false
+		return m, nil
+
+	case key.Matches(msg, m.keys.Right):
+		m.activeLane++
+		if m.activeLane >= len(m.board.Lanes) {
+			m.activeLane = 0
+		}
+		m.activeTask = 0
+		m.clampSelection()
+		m.viewScroll = 0
+		m.gPressed = false
+		return m, nil
+
+	case key.Matches(msg, m.keys.Top):
+		if m.gPressed {
+			m.activeTask = 0
+			m.clampSelection()
+			m.viewScroll = 0
+			m.gPressed = false
+		} else {
+			m.gPressed = true
+		}
+		return m, nil
+
+	case key.Matches(msg, m.keys.Bottom):
+		lane := m.board.Lanes[m.activeLane]
+		tasks := m.filterTasks(m.board.Tasks[lane])
+		m.activeTask = len(tasks) - 1
+		if m.activeTask < 0 {
+			m.activeTask = 0
+		}
+		m.viewScroll = 0
+		m.gPressed = false
+		return m, nil
+
+	case key.Matches(msg, m.keys.HalfUp):
+		m.viewScroll -= 10
+		if m.viewScroll < 0 {
+			m.viewScroll = 0
+		}
+		m.gPressed = false
+		return m, nil
+
+	case key.Matches(msg, m.keys.HalfDown):
+		m.viewScroll += 10
+		m.gPressed = false
+		return m, nil
+
+	case key.Matches(msg, m.keys.MoveLeft):
+		m.gPressed = false
+		return m.moveTaskLeft()
+
+	case key.Matches(msg, m.keys.MoveRight):
+		m.gPressed = false
+		return m.moveTaskRight()
+
+	case key.Matches(msg, m.keys.OrderUp):
+		m.gPressed = false
+		return m.reorderTask(-1)
+
+	case key.Matches(msg, m.keys.OrderDown):
+		m.gPressed = false
+		return m.reorderTask(1)
+
+	case key.Matches(msg, m.keys.New):
+		m.mode = ModeInput
+		m.inputAction = "new"
+		m.textInput.Reset()
+		m.textInput.Placeholder = "Task title..."
+		m.textInput.EchoMode = textinput.EchoNormal
+		m.textInput.Focus()
+		m.gPressed = false
+		return m, textinput.Blink
+
+	case key.Matches(msg, m.keys.Edit):
+		t := m.selectedTask()
+		if t != nil {
+			m.mode = ModeInput
+			m.inputAction = "edit"
+			m.textInput.SetValue(t.Title)
+			m.textInput.EchoMode = textinput.EchoNormal
+			m.textInput.Focus()
+			m.gPressed = false
+			return m, textinput.Blink
+		}
+
+	case key.Matches(msg, m.keys.Delete):
+		if m.selectedTask() != nil {
+			m.mode = ModeConfirm
+			m.inputAction = "delete"
+			m.gPressed = false
+		}
+		return m, nil
+
+	case key.Matches(msg, m.keys.ToggleDone):
+		m.gPressed = false
+		return m.toggleTaskDone()
+
+	case key.Matches(msg, m.keys.Tag):
+		if m.selectedTask() != nil {
+			if m.config.IsADOBoard() {
+				m.message = "Tags are managed in Azure DevOps"
+				return m, nil
+			}
+			m.mode = ModeTag
+			m.textInput.Reset()
+			m.textInput.Placeholder = "tag name..."
+			m.textInput.EchoMode = textinput.EchoNormal
+			m.textInput.Focus()
+			m.tagSuggestions = m.collectAllTags()
+			m.tagSuggestion = ""
+			m.gPressed = false
+			return m, textinput.Blink
+		}
+
+	case key.Matches(msg, m.keys.Mark):
+		if m.config.IsADOBoard() {
+			m.message = "Marking is not supported for Azure DevOps boards"
+			return m, nil
+		}
+		m.gPressed = false
+		return m.toggleMark()
+
+	case key.Matches(msg, m.keys.OpenEditor):
+		t := m.selectedTask()
+		if t != nil {
+			m.gPressed = false
+			if m.config.IsADOBoard() {
+				return m.openADOEditor(t)
+			}
+			return m, m.openInEditor(t.FilePath)
+		}
+		return m, nil
+
+	case key.Matches(msg, m.keys.OpenURL):
+		m.gPressed = false
+		return m.openTaskURL()
+
+	case key.Matches(msg, m.keys.Comments):
+		m.gPressed = false
+		return m.openComments()
+
+	case key.Matches(msg, m.keys.Refresh):
+		m.gPressed = false
 		if m.config.IsADOBoard() {
 			m.message = "Syncing with Azure DevOps..."
 		}
@@ -1551,6 +1753,8 @@ func (m Model) renderHeader() string {
 		modeStr = "[LOGS]"
 	case ModeComments:
 		modeStr = "[COMMENTS]"
+	case ModeFocus:
+		modeStr = "[FOCUS]"
 	default:
 		modeStr = "[NORMAL]"
 	}
@@ -1610,6 +1814,10 @@ func (m Model) renderBoard() string {
 
 	if m.mode == ModeComments {
 		return m.renderComments()
+	}
+
+	if m.mode == ModeFocus {
+		return m.renderFocusView()
 	}
 
 	laneWidths := m.computeLaneWidths()
@@ -1992,17 +2200,28 @@ func (m Model) renderFooter() string {
 	return lipgloss.JoinVertical(lipgloss.Left, parts...)
 }
 
+const defaultDetailFooterHint = "[q: back, j/k: scroll, ctrl+g: edit in nvim, ctrl+o: open url, ctrl+c: comments]"
+const defaultADODetailFooterHint = "[q: back  H/L: move lane  e: edit title  j/k: scroll]"
+
 func (m Model) renderTaskDetail() string {
+	return m.renderTaskDetailPane(m.width, defaultDetailFooterHint, defaultADODetailFooterHint)
+}
+
+// renderTaskDetailPane renders the selected task's detail — description or
+// ADO summary — inside a bordered box sized to width. footerHint and
+// adoFooterHint let callers (normal ModeView vs. the narrower ModeFocus read
+// pane) show keybinding hints that match their own navigation semantics.
+func (m Model) renderTaskDetailPane(width int, footerHint, adoFooterHint string) string {
 	t := m.selectedTask()
 	if t == nil {
 		return "No task selected"
 	}
 
 	if t.ADOItemID > 0 {
-		return m.renderADOTaskDetail(t)
+		return m.renderADOTaskDetailPane(t, width, adoFooterHint)
 	}
 
-	m.mdRenderer.SetWidth(m.width - 8)
+	m.mdRenderer.SetWidth(width - 8)
 
 	content, err := os.ReadFile(t.FilePath)
 	if err != nil {
@@ -2031,7 +2250,7 @@ func (m Model) renderTaskDetail() string {
 
 	statusLine := lipgloss.NewStyle().
 		Foreground(SubtleColor).
-		Render(strings.Repeat("─", m.width-8))
+		Render(strings.Repeat("─", width-8))
 
 	tags := ""
 	if len(t.Tags) > 0 {
@@ -2046,13 +2265,13 @@ func (m Model) renderTaskDetail() string {
 
 	footer := lipgloss.NewStyle().
 		Foreground(SubtleColor).
-		Render("Status: " + string(t.Status) + "  " + tags + "  [q: back, j/k: scroll, ctrl+g: edit in nvim, ctrl+o: open url, ctrl+c: comments]")
+		Render("Status: " + string(t.Status) + "  " + tags + "  " + footerHint)
 
 	detailStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(ActiveColor).
 		Padding(1, 2).
-		Width(m.width - 4).
+		Width(width - 4).
 		Height(availableHeight + 2)
 
 	return detailStyle.Render(
@@ -2064,14 +2283,14 @@ func (m Model) renderTaskDetail() string {
 	)
 }
 
-func (m Model) renderADOTaskDetail(t *task.Task) string {
+func (m Model) renderADOTaskDetailPane(t *task.Task, width int, footerHint string) string {
 	availableHeight := m.height - 8
 
 	heading := lipgloss.NewStyle().Bold(true).Foreground(HighlightColor).
 		Render(fmt.Sprintf("#%d  %s", t.ADOItemID, t.Title))
 
 	separator := lipgloss.NewStyle().Foreground(SubtleColor).
-		Render(strings.Repeat("─", m.width-8))
+		Render(strings.Repeat("─", width-8))
 
 	var metaParts []string
 	metaParts = append(metaParts, "Status: "+string(t.Status))
@@ -2098,14 +2317,13 @@ func (m Model) renderADOTaskDetail(t *task.Task) string {
 	}
 	visibleDesc := strings.Join(lines[m.viewScroll:end], "\n")
 
-	footer := lipgloss.NewStyle().Foreground(SubtleColor).
-		Render("[q: back  H/L: move lane  e: edit title  j/k: scroll]")
+	footer := lipgloss.NewStyle().Foreground(SubtleColor).Render(footerHint)
 
 	detailStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(ActiveColor).
 		Padding(1, 2).
-		Width(m.width - 4).
+		Width(width - 4).
 		Height(availableHeight + 2)
 
 	return detailStyle.Render(
@@ -2118,6 +2336,36 @@ func (m Model) renderADOTaskDetail(t *task.Task) string {
 			footer,
 		),
 	)
+}
+
+// focusReadFooterHint and focusReadADOFooterHint mirror the ModeView
+// footers but describe ModeFocus's own navigation: j/k and h/l move the
+// selection instead of scrolling, so ctrl+u/ctrl+f take over scrolling.
+const focusReadFooterHint = "[tab: back, ctrl+u/ctrl+f: scroll, ctrl+g: edit in nvim, ctrl+o: open url, ctrl+c: comments]"
+const focusReadADOFooterHint = "[tab: back  H/L: move lane  e: edit title  ctrl+u/ctrl+f: scroll]"
+
+// renderFocusView lays out the fullscreen focus mode: a wide read pane on
+// the left showing the selected task, and the active lane's list on the
+// right so the two stay in sync as the selection moves.
+func (m Model) renderFocusView() string {
+	listWidth := m.width / 3
+	if listWidth < 24 {
+		listWidth = 24
+	}
+	if listWidth > m.width-20 {
+		listWidth = m.width - 20
+	}
+	if listWidth < 1 {
+		listWidth = 1
+	}
+	readWidth := m.width - listWidth
+
+	readPane := m.renderTaskDetailPane(readWidth, focusReadFooterHint, focusReadADOFooterHint)
+
+	status := m.board.Lanes[m.activeLane]
+	listPane := m.renderLane(m.activeLane, status, listWidth, false)
+
+	return lipgloss.JoinHorizontal(lipgloss.Top, readPane, listPane)
 }
 
 func (m Model) renderHelp() string {

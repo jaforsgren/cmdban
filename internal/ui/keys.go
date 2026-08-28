@@ -34,6 +34,7 @@ type KeyMap struct {
 	Tag        key.Binding
 	Boards         key.Binding
 	CollapseColumn key.Binding
+	Focus          key.Binding
 }
 
 var DefaultKeyMap = KeyMap{
@@ -161,6 +162,10 @@ var DefaultKeyMap = KeyMap{
 		key.WithKeys("."),
 		key.WithHelp(".", "minimize column"),
 	),
+	Focus: key.NewBinding(
+		key.WithKeys("tab"),
+		key.WithHelp("tab", "focus mode"),
+	),
 }
 
 func (k KeyMap) ShortHelp() []key.Binding {
@@ -174,7 +179,7 @@ func (k KeyMap) FullHelp() [][]key.Binding {
 		{k.MoveLeft, k.MoveRight, k.OrderUp, k.OrderDown},
 		{k.New, k.Edit, k.ToggleDone, k.Delete},
 		{k.Mark, k.Tag, k.Search, k.Filter, k.Refresh},
-		{k.Settings, k.Help, k.Quit, k.Boards, k.CollapseColumn},
+		{k.Settings, k.Help, k.Quit, k.Boards, k.CollapseColumn, k.Focus},
 		{k.OpenEditor, k.OpenURL, k.Comments},
 	}
 }
