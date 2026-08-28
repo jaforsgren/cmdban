@@ -213,6 +213,59 @@ func TestArchiveTask(t *testing.T) {
 	}
 }
 
+func TestCopyTaskToDirectory(t *testing.T) {
+	source := &Task{
+		Title:         "Move Me",
+		Description:   "some description",
+		Status:        StatusToday,
+		Tags:          []string{"urgent"},
+		Priority:      2,
+		Marked:        true,
+		CheckboxDone:  1,
+		CheckboxTotal: 2,
+		FilePath:      "/original/move_me.md",
+		ADOItemID:     42,
+	}
+
+	destDir := t.TempDir()
+
+	copied, err := CopyTaskToDirectory(source, destDir, StatusBacklog)
+	if err != nil {
+		t.Fatalf("CopyTaskToDirectory failed: %v", err)
+	}
+
+	if copied.FilePath == source.FilePath {
+		t.Error("copied task should have a new file path in the destination directory")
+	}
+	if filepath.Dir(copied.FilePath) != destDir {
+		t.Errorf("expected copy in %q, got %q", destDir, copied.FilePath)
+	}
+	if _, err := os.Stat(copied.FilePath); err != nil {
+		t.Errorf("expected copied file to exist: %v", err)
+	}
+	if _, err := os.Stat(source.FilePath); !os.IsNotExist(err) {
+		t.Error("CopyTaskToDirectory should not touch the source file")
+	}
+
+	if copied.Status != StatusBacklog {
+		t.Errorf("expected status %q, got %q", StatusBacklog, copied.Status)
+	}
+	if copied.Title != source.Title || copied.Description != source.Description {
+		t.Error("copied task should preserve title and description")
+	}
+	if copied.ADOItemID != 0 {
+		t.Error("copied task should not carry over ADO linkage")
+	}
+
+	reparsed, err := ParseMarkdownFile(copied.FilePath)
+	if err != nil {
+		t.Fatalf("ParseMarkdownFile failed: %v", err)
+	}
+	if reparsed.Status != StatusBacklog || reparsed.Title != source.Title {
+		t.Error("written file should round-trip the copied task's fields")
+	}
+}
+
 func TestSanitizeTitle(t *testing.T) {
 	tests := []struct {
 		input    string

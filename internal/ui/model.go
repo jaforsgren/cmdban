@@ -44,6 +44,7 @@ const (
 	ModeLogs
 	ModeComments
 	ModeFocus
+	ModeMoveBoard
 )
 
 type Model struct {
@@ -68,6 +69,7 @@ type Model struct {
 	tagSuggestion      string
 	searchFilter       string
 	boardSelectorIndex int
+	moveBoardIndex     int
 	pendingBoardName   string
 	patSelectorIndex   int
 	pendingPATName     string
@@ -98,6 +100,11 @@ type errMsg struct {
 }
 
 type taskOrderSavedMsg struct{}
+
+type taskMovedMsg struct {
+	message string
+	reload  bool
+}
 
 type editorFinishedMsg struct {
 	filePath string
@@ -251,6 +258,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case taskOrderSavedMsg:
 		return m, nil
 
+	case taskMovedMsg:
+		m.message = msg.message
+		if msg.reload {
+			return m, m.loadTasks
+		}
+		return m, nil
+
 	case editorFinishedMsg:
 		return m, m.loadTasks
 
@@ -314,6 +328,10 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	if m.mode == ModeFocus {
 		return m.handleFocusMode(msg)
+	}
+
+	if m.mode == ModeMoveBoard {
+		return m.handleMoveBoardMode(msg)
 	}
 
 	return m.handleNormalMode(msg)
@@ -489,6 +507,10 @@ func (m Model) handleNormalMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.mode = ModeBoardSelector
 		m.gPressed = false
 		return m, nil
+
+	case key.Matches(msg, m.keys.MoveToBoard):
+		m.gPressed = false
+		return m.startMoveBoard()
 
 	case key.Matches(msg, m.keys.Enter):
 		if m.selectedTask() != nil {
@@ -707,6 +729,9 @@ func (m Model) handleViewMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.ToggleDone):
 		m.mode = ModeNormal
 		return m.toggleTaskDone()
+
+	case key.Matches(msg, m.keys.MoveToBoard):
+		return m.startMoveBoard()
 
 	case key.Matches(msg, m.keys.OpenEditor):
 		t := m.selectedTask()
@@ -1171,6 +1196,9 @@ func (m Model) handleCommand(cmd string) (tea.Model, tea.Cmd) {
 		m.mode = ModeBoardSelector
 		return m, nil
 
+	case "move", "m":
+		return m.startMoveBoard()
+
 	case "logs", "log", "l":
 		m.logScroll = 0
 		m.mode = ModeLogs
@@ -1558,6 +1586,120 @@ func (m Model) moveTaskRight() (tea.Model, tea.Cmd) {
 	}
 }
 
+// moveBoardTargets returns every configured board except the currently
+// active one, in configured order.
+func (m Model) moveBoardTargets() []config.Board {
+	var targets []config.Board
+	for _, b := range m.config.Boards {
+		if b.Name != m.config.CurrentBoard {
+			targets = append(targets, b)
+		}
+	}
+	return targets
+}
+
+func (m Model) startMoveBoard() (tea.Model, tea.Cmd) {
+	if m.selectedTask() == nil {
+		m.message = "No task selected"
+		m.mode = ModeNormal
+		return m, nil
+	}
+	if len(m.moveBoardTargets()) == 0 {
+		m.message = "No other boards to move this task to"
+		m.mode = ModeNormal
+		return m, nil
+	}
+	m.moveBoardIndex = 0
+	m.mode = ModeMoveBoard
+	return m, nil
+}
+
+func (m Model) handleMoveBoardMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	targets := m.moveBoardTargets()
+	switch msg.String() {
+	case "j", "down":
+		m.moveBoardIndex++
+		if m.moveBoardIndex >= len(targets) {
+			m.moveBoardIndex = 0
+		}
+	case "k", "up":
+		m.moveBoardIndex--
+		if m.moveBoardIndex < 0 {
+			m.moveBoardIndex = len(targets) - 1
+		}
+	case "enter":
+		if m.moveBoardIndex < len(targets) {
+			return m.moveTaskToBoard(&targets[m.moveBoardIndex])
+		}
+	case "esc", "q":
+		m.mode = ModeNormal
+	}
+	return m, nil
+}
+
+// resolveTargetStatus maps a task's current status onto a matching column
+// name on the target board, falling back to the target's first column (or
+// backlog) when there is no name match.
+func resolveTargetStatus(target *config.Board, status task.Status) task.Status {
+	for _, col := range target.Columns {
+		if strings.EqualFold(col.Name, string(status)) {
+			return task.Status(col.Name)
+		}
+	}
+	if len(target.Columns) > 0 {
+		return task.Status(target.Columns[0].Name)
+	}
+	return task.StatusBacklog
+}
+
+// moveTaskToBoard copies the selected task into target's directory as a
+// plain markdown file and removes it from the current board. Moving into an
+// Azure DevOps board is not supported since that requires creating a remote
+// work item. Moving an Azure DevOps task out detaches it from ADO (no
+// remote item is deleted), so it reappears on the source board on next sync
+// unless it no longer matches that board's query.
+func (m Model) moveTaskToBoard(target *config.Board) (tea.Model, tea.Cmd) {
+	m.mode = ModeNormal
+	t := m.selectedTask()
+	if t == nil {
+		return m, nil
+	}
+
+	if target.Type == config.BoardTypeAzureDevOps {
+		m.message = "Moving tasks into Azure DevOps boards isn't supported"
+		return m, nil
+	}
+
+	sourceBoard := m.config.ActiveBoard()
+	sourceIsADO := sourceBoard != nil && sourceBoard.Type == config.BoardTypeAzureDevOps
+	newStatus := resolveTargetStatus(target, t.Status)
+	targetName := target.Name
+	targetDir := target.Directory
+
+	m.board.RemoveTask(t)
+	m.clampSelection()
+
+	return m, func() tea.Msg {
+		if _, err := task.CopyTaskToDirectory(t, targetDir, newStatus); err != nil {
+			return errMsg{err}
+		}
+
+		if sourceIsADO {
+			return taskMovedMsg{
+				message: fmt.Sprintf("Copied to board %q; unlink or move it in Azure DevOps to keep it off this board", targetName),
+			}
+		}
+
+		if err := os.Remove(t.FilePath); err != nil && !os.IsNotExist(err) {
+			return errMsg{err}
+		}
+		return taskMovedMsg{
+			message: fmt.Sprintf("Moved task to board %q", targetName),
+			reload:  true,
+		}
+	}
+}
+
 func (m Model) pushADOStateChange(t *task.Task, newLane task.Status) tea.Cmd {
 	adoCfg := m.config.ActiveBoard().AzureDevOps
 	snapshot := t
@@ -1755,6 +1897,8 @@ func (m Model) renderHeader() string {
 		modeStr = "[COMMENTS]"
 	case ModeFocus:
 		modeStr = "[FOCUS]"
+	case ModeMoveBoard:
+		modeStr = "[MOVE]"
 	default:
 		modeStr = "[NORMAL]"
 	}
@@ -1798,6 +1942,10 @@ func (m Model) renderBoard() string {
 
 	if m.mode == ModeBoardSelector {
 		return m.renderBoardSelector()
+	}
+
+	if m.mode == ModeMoveBoard {
+		return m.renderMoveBoardSelector()
 	}
 
 	if m.mode == ModePATManager {
@@ -2387,7 +2535,8 @@ func (m Model) renderHelp() string {
   ?        toggle help          :       command mode
   r        refresh              :q      quit
   q        quit                 :b      board switcher
-  ctrl+b   board switcher       :pats   PAT manager
+  ctrl+b   board switcher       :move   move task to board
+  ctrl+m   move task to board   :pats   PAT manager
                                 :logs   error/log viewer
 
   Press ? or ESC to close help
@@ -2471,6 +2620,52 @@ func (m Model) switchBoard(name string) (tea.Model, tea.Cmd) {
 		m.message = "Switched to board: " + name + " — syncing..."
 	}
 	return m, m.loadTasks
+}
+
+func (m Model) renderMoveBoardSelector() string {
+	targets := m.moveBoardTargets()
+
+	t := m.selectedTask()
+	title := "  Move Task To Board  "
+	if t != nil {
+		title = fmt.Sprintf("  Move %q To Board  ", t.Title)
+	}
+
+	var rows []string
+	rows = append(rows, lipgloss.NewStyle().Bold(true).Foreground(HighlightColor).Render(title))
+	rows = append(rows, lipgloss.NewStyle().Foreground(SubtleColor).Render("  j/k: navigate  enter: move  esc: cancel"))
+	rows = append(rows, "")
+
+	if len(targets) == 0 {
+		rows = append(rows, "  No other boards configured.")
+	}
+
+	for i, b := range targets {
+		cursor := "  "
+		if i == m.moveBoardIndex {
+			cursor = "▶ "
+		}
+
+		nameStyle := lipgloss.NewStyle()
+		if i == m.moveBoardIndex {
+			nameStyle = nameStyle.Foreground(lipgloss.Color("#FFFFFF")).Background(ActiveColor).Bold(true)
+		}
+
+		adoBadge := ""
+		dir := ""
+		if b.Type == config.BoardTypeAzureDevOps {
+			adoBadge = lipgloss.NewStyle().Foreground(HighlightColor).Render(" [ADO]")
+			dir = lipgloss.NewStyle().Foreground(SubtleColor).Render("  not supported as a move target")
+		} else if b.Directory != "" {
+			dir = lipgloss.NewStyle().Foreground(SubtleColor).Render("  " + b.Directory)
+		}
+
+		row := cursor + nameStyle.Render(b.Name) + adoBadge + "\n" + dir
+		rows = append(rows, row)
+	}
+
+	content := lipgloss.JoinVertical(lipgloss.Left, rows...)
+	return DialogStyle.Width(60).Render(content)
 }
 
 func (m Model) renderBoardSelector() string {

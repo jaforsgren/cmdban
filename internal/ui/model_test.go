@@ -320,3 +320,138 @@ func TestLogsClearEmptiesBuffer(t *testing.T) {
 		t.Fatalf("expected logs to be cleared")
 	}
 }
+
+func twoLocalBoardConfig(t *testing.T) (*config.Config, string, string) {
+	t.Helper()
+	sourceDir := t.TempDir()
+	destDir := t.TempDir()
+
+	cfg := &config.Config{
+		CurrentBoard: "source",
+		Boards: []config.Board{
+			{Name: "source", Directory: sourceDir, Columns: []config.Column{{Name: "today"}, {Name: "backlog"}}},
+			{Name: "dest", Directory: destDir, Columns: []config.Column{{Name: "today"}, {Name: "backlog"}}},
+		},
+	}
+	return cfg, sourceDir, destDir
+}
+
+func TestStartMoveBoardNoTaskSelectedShowsMessage(t *testing.T) {
+	cfg, _, _ := twoLocalBoardConfig(t)
+	m := NewModel(cfg)
+
+	got, cmd := m.startMoveBoard()
+	updated := got.(Model)
+
+	if updated.mode != ModeNormal {
+		t.Fatalf("mode = %v, want ModeNormal", updated.mode)
+	}
+	if updated.message == "" {
+		t.Fatalf("message = %q, want an explanation", updated.message)
+	}
+	if cmd != nil {
+		t.Fatalf("cmd = %v, want nil", cmd)
+	}
+}
+
+func TestStartMoveBoardNoOtherBoardsShowsMessage(t *testing.T) {
+	m := NewModel(&config.Config{
+		CurrentBoard: "only",
+		Boards:       []config.Board{{Name: "only", Directory: t.TempDir()}},
+	})
+	m.board.AddTask(&task.Task{ID: "1", Title: "task", Status: task.StatusToday})
+
+	got, _ := m.startMoveBoard()
+	updated := got.(Model)
+
+	if updated.mode != ModeNormal {
+		t.Fatalf("mode = %v, want ModeNormal", updated.mode)
+	}
+	if updated.message == "" {
+		t.Fatalf("message = %q, want an explanation", updated.message)
+	}
+}
+
+func TestStartMoveBoardEntersMoveBoardMode(t *testing.T) {
+	cfg, _, _ := twoLocalBoardConfig(t)
+	m := NewModel(cfg)
+	m.board.AddTask(&task.Task{ID: "1", Title: "task", Status: task.StatusToday})
+
+	got, _ := m.startMoveBoard()
+	updated := got.(Model)
+
+	if updated.mode != ModeMoveBoard {
+		t.Fatalf("mode = %v, want ModeMoveBoard", updated.mode)
+	}
+}
+
+func TestMoveTaskToBoardMovesFileToDestination(t *testing.T) {
+	cfg, sourceDir, destDir := twoLocalBoardConfig(t)
+	m := NewModel(cfg)
+
+	created, err := task.CreateNewTask(sourceDir, "Move Me")
+	if err != nil {
+		t.Fatalf("CreateNewTask failed: %v", err)
+	}
+	created.Status = task.StatusToday
+	m.board.AddTask(created)
+
+	got, cmd := m.moveTaskToBoard(&cfg.Boards[1])
+	updated := got.(Model)
+
+	if updated.mode != ModeNormal {
+		t.Fatalf("mode = %v, want ModeNormal", updated.mode)
+	}
+	if cmd == nil {
+		t.Fatalf("cmd = nil, want a move command")
+	}
+
+	msg := cmd()
+	moved, ok := msg.(taskMovedMsg)
+	if !ok {
+		t.Fatalf("cmd() = %T, want taskMovedMsg", msg)
+	}
+	if !moved.reload {
+		t.Fatalf("reload = false, want true for a local-to-local move")
+	}
+
+	if _, err := os.Stat(created.FilePath); !os.IsNotExist(err) {
+		t.Fatalf("expected source file to be removed after move")
+	}
+
+	entries, err := os.ReadDir(destDir)
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("expected exactly one file in destination directory, got %v (err=%v)", entries, err)
+	}
+}
+
+func TestMoveTaskToADOBoardIsUnsupported(t *testing.T) {
+	cfg, sourceDir, _ := twoLocalBoardConfig(t)
+	cfg.Boards = append(cfg.Boards, config.Board{
+		Name:        "ado",
+		Type:        config.BoardTypeAzureDevOps,
+		AzureDevOps: &config.AzureDevOpsConfig{Org: "org", Project: "proj"},
+	})
+	m := NewModel(cfg)
+
+	created, err := task.CreateNewTask(sourceDir, "Stays Put")
+	if err != nil {
+		t.Fatalf("CreateNewTask failed: %v", err)
+	}
+	created.Status = task.StatusToday
+	m.board.AddTask(created)
+
+	adoTarget := &cfg.Boards[2]
+	got, cmd := m.moveTaskToBoard(adoTarget)
+	updated := got.(Model)
+
+	if cmd != nil {
+		t.Fatalf("cmd = %v, want nil for an unsupported target", cmd)
+	}
+	if updated.message == "" {
+		t.Fatalf("message = %q, want an explanation", updated.message)
+	}
+	if _, err := os.Stat(created.FilePath); err != nil {
+		t.Fatalf("expected source file to remain untouched: %v", err)
+	}
+}

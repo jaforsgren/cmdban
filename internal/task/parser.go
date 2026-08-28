@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -238,6 +239,47 @@ func CreateNewTask(dir, title string) (*Task, error) {
 	}
 
 	return t, nil
+}
+
+// CopyTaskToDirectory writes t's title, description, and metadata into a new
+// markdown file under dir, using a freshly generated ID and status. ADO
+// linkage fields are intentionally not copied, since moving a task to a
+// plain markdown board detaches it from Azure DevOps.
+func CopyTaskToDirectory(t *Task, dir string, status Status) (*Task, error) {
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return nil, err
+	}
+
+	slug := sanitizeTitle(t.Title)
+	var filename string
+	if slug == "" {
+		filename = generateShortID() + ".md"
+	} else {
+		filename = uniqueFilename(dir, slug)
+	}
+	path := filepath.Join(dir, filename)
+
+	now := time.Now()
+	newTask := &Task{
+		ID:            filename,
+		Title:         t.Title,
+		Description:   t.Description,
+		Status:        status,
+		Tags:          slices.Clone(t.Tags),
+		Priority:      t.Priority,
+		Marked:        t.Marked,
+		CheckboxDone:  t.CheckboxDone,
+		CheckboxTotal: t.CheckboxTotal,
+		CreatedAt:     now,
+		UpdatedAt:     now,
+		FilePath:      path,
+	}
+
+	if err := WriteMarkdownFile(newTask); err != nil {
+		return nil, err
+	}
+
+	return newTask, nil
 }
 
 const archiveDirName = "_archive"
