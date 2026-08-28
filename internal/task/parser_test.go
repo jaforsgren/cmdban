@@ -224,7 +224,6 @@ func TestCopyTaskToDirectory(t *testing.T) {
 		CheckboxDone:  1,
 		CheckboxTotal: 2,
 		FilePath:      "/original/move_me.md",
-		ADOItemID:     42,
 	}
 
 	destDir := t.TempDir()
@@ -263,6 +262,29 @@ func TestCopyTaskToDirectory(t *testing.T) {
 	}
 	if reparsed.Status != StatusBacklog || reparsed.Title != source.Title {
 		t.Error("written file should round-trip the copied task's fields")
+	}
+}
+
+func TestCopyTaskToDirectoryPrependsADOItemID(t *testing.T) {
+	source := &Task{Title: "Fix login bug", Description: "desc", ADOItemID: 1234}
+	destDir := t.TempDir()
+
+	copied, err := CopyTaskToDirectory(source, destDir, StatusBacklog, "")
+	if err != nil {
+		t.Fatalf("CopyTaskToDirectory failed: %v", err)
+	}
+
+	want := "#1234 Fix login bug"
+	if copied.Title != want {
+		t.Errorf("copied.Title = %q, want %q", copied.Title, want)
+	}
+
+	reparsed, err := ParseMarkdownFile(copied.FilePath)
+	if err != nil {
+		t.Fatalf("ParseMarkdownFile failed: %v", err)
+	}
+	if reparsed.Title != want {
+		t.Errorf("written file title = %q, want %q", reparsed.Title, want)
 	}
 }
 

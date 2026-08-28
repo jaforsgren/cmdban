@@ -247,12 +247,19 @@ func CreateNewTask(dir, title string) (*Task, error) {
 // plain markdown board detaches it from Azure DevOps. When sourceURL is
 // non-empty, it is appended to the description as a link back to where the
 // task came from, since the copy otherwise carries no trace of its origin.
+// A task carrying an ADO work item ID has that ID prepended to its title,
+// so it stays identifiable once detached from Azure DevOps.
 func CopyTaskToDirectory(t *Task, dir string, status Status, sourceURL string) (*Task, error) {
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return nil, err
 	}
 
-	slug := sanitizeTitle(t.Title)
+	title := t.Title
+	if t.ADOItemID != 0 {
+		title = fmt.Sprintf("#%d %s", t.ADOItemID, t.Title)
+	}
+
+	slug := sanitizeTitle(title)
 	var filename string
 	if slug == "" {
 		filename = generateShortID() + ".md"
@@ -272,7 +279,7 @@ func CopyTaskToDirectory(t *Task, dir string, status Status, sourceURL string) (
 	now := time.Now()
 	newTask := &Task{
 		ID:            filename,
-		Title:         t.Title,
+		Title:         title,
 		Description:   description,
 		Status:        status,
 		Tags:          slices.Clone(t.Tags),

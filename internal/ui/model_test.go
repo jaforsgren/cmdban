@@ -530,4 +530,7 @@ func TestMoveTaskFromADOBoardAddsSourceLinkToDescription(t *testing.T) {
 	if !strings.Contains(copied.Description, wantURL) {
 		t.Errorf("copied description = %q, want it to contain %q", copied.Description, wantURL)
 	}
+	if wantTitle := "#42 Bug"; copied.Title != wantTitle {
+		t.Errorf("copied.Title = %q, want %q", copied.Title, wantTitle)
+	}
 }
