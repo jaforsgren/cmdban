@@ -31,6 +31,7 @@ type KeyMap struct {
 	OpenEditor      key.Binding
 	OpenURL         key.Binding
 	OpenBoardURL    key.Binding
+	MarkdownView    key.Binding
 	Comments        key.Binding
 	Tag             key.Binding
 	Boards          key.Binding
@@ -158,6 +159,10 @@ var DefaultKeyMap = KeyMap{
 	OpenURL: key.NewBinding(
 		key.WithKeys("ctrl+o"),
 		key.WithHelp("ctrl+o", "open url in browser"),
+	),
+	MarkdownView: key.NewBinding(
+		key.WithKeys("M"),
+		key.WithHelp("M", "open work item as markdown"),
 	),
 	OpenBoardURL: key.NewBinding(
 		key.WithKeys("O"),

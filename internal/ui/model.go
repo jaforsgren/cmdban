@@ -328,6 +328,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case editorFinishedMsg:
 		return m, m.loadTasks
 
+	case adoMarkdownReadyMsg:
+		return m.handleADOMarkdownReady(msg)
+
+	case adoMarkdownClosedMsg:
+		return m.handleADOMarkdownClosed(msg)
+
 	case commentEditorFinishedMsg:
 		return m.handleCommentEditorFinished(msg)
 
@@ -631,6 +637,10 @@ func (m Model) handleNormalMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.gPressed = false
 		return m.openBoardURL()
 
+	case key.Matches(msg, m.keys.MarkdownView):
+		m.gPressed = false
+		return m.openADOMarkdown()
+
 	case key.Matches(msg, m.keys.Comments):
 		m.gPressed = false
 		return m.openComments()
@@ -870,6 +880,9 @@ func (m Model) handleViewMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case key.Matches(msg, m.keys.MarkdownView):
+		return m.openADOMarkdown()
+
 	case key.Matches(msg, m.keys.OpenURL):
 		return m.openTaskURL()
 
@@ -1059,6 +1072,9 @@ func (m Model) handleFocusMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, m.openInEditor(t.FilePath)
 		}
 		return m, nil
+
+	case key.Matches(msg, m.keys.MarkdownView):
+		return m.openADOMarkdown()
 
 	case key.Matches(msg, m.keys.OpenURL):
 		m.gPressed = false
