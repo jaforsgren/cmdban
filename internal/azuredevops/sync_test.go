@@ -319,3 +319,18 @@ func TestBoardWebURL(t *testing.T) {
 		t.Fatalf("BoardWebURL() without level = %q, want %q", got, want)
 	}
 }
+
+func TestWithoutRemovedItemsDropsRemovedState(t *testing.T) {
+	items := []WorkItem{
+		{ID: 1, Fields: WorkItemFields{State: "New"}},
+		{ID: 2, Fields: WorkItemFields{State: workItemStateRemoved}},
+		{ID: 3, Fields: WorkItemFields{State: "removed"}},
+		{ID: 4, Fields: WorkItemFields{State: "Active"}},
+	}
+
+	got := withoutRemovedItems(items)
+
+	if len(got) != 2 || got[0].ID != 1 || got[1].ID != 4 {
+		t.Fatalf("withoutRemovedItems() = %+v, want items 1 and 4", got)
+	}
+}

@@ -229,7 +229,7 @@ func FetchBoardTasks(adoCfg *config.AzureDevOpsConfig, pat string) ([]*task.Task
 	}
 
 	tasks := make([]*task.Task, 0, len(items))
-	for _, item := range items {
+	for _, item := range withoutRemovedItems(items) {
 		tasks = append(tasks, workItemToTask(item, adoCfg))
 	}
 
@@ -241,6 +241,20 @@ func FetchBoardTasks(adoCfg *config.AzureDevOpsConfig, pat string) ([]*task.Task
 		ReturnedCount: len(filtered),
 	}
 	return filtered, diag, nil
+}
+
+// workItemStateRemoved marks work items taken out of scope. They map to no
+// board column, so they would otherwise land in the first lane.
+const workItemStateRemoved = "Removed"
+
+func withoutRemovedItems(items []WorkItem) []WorkItem {
+	kept := make([]WorkItem, 0, len(items))
+	for _, item := range items {
+		if !strings.EqualFold(item.Fields.State, workItemStateRemoved) {
+			kept = append(kept, item)
+		}
+	}
+	return kept
 }
 
 // filterForBoardMode applies the Feature/Story collapsing filter for sprint
