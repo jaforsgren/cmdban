@@ -161,7 +161,8 @@ See **[docs/azure-devops.md](docs/azure-devops.md)** for full setup instructions
 | `0` / `1`–`8` / `9` | Work item type filter: `0` (default) shows User Stories and Bugs, `1`–`8` a single type as numbered in the topbar's TYPES section, `9` all types. Cards show a small type glyph: ◆ story, ● bug, ▪ task, ★ feature, ♛ epic |
 | `U` | Toggle unassigned cards from your team's area on an assigned-to-me board (saved as `include_unassigned`) |
 | `v` | Toggle lanes between Kanban board columns and work item states |
-| `ctrl+o` | On the board: open the ADO board in the browser. In a card or focus mode: open the work item |
+| `ctrl+o` | Open the selected work item in the browser |
+| `O` | Open the ADO board in the browser |
 | `c` / `ctrl+c` | Comments view (the topbar shows the selected card's comment count) |
 | `a` (in comments view) | Write a comment in `$EDITOR`; save and quit posts it as markdown, an empty file discards it |
 | `tab` (in task view) | Toggle a side pane beside the work item details: linked PRs (link, status, approvals, comment count, description excerpt, pipeline runs of the merge commit) above the comments |

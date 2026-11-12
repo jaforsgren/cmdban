@@ -378,7 +378,7 @@ var (
 		{"ctrl+m", "move board"}, {":", "command"}, {"?", "help"},
 	}
 	adoBoardShortcuts = []shortcut{
-		{"b", "new bug"}, {"0/1-8/9", "type: default/one/all"}, {"U", "unassigned"}, {"v", "column/state lanes"}, {"c", "comments"}, {"ctrl+o", "open board in browser"},
+		{"b", "new bug"}, {"0/1-8/9", "type: default/one/all"}, {"U", "unassigned"}, {"v", "column/state lanes"}, {"c", "comments"}, {"ctrl+o", "open card in browser"}, {"O", "open board in browser"},
 	}
 )
 

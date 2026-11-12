@@ -30,6 +30,7 @@ type KeyMap struct {
 	Refresh         key.Binding
 	OpenEditor      key.Binding
 	OpenURL         key.Binding
+	OpenBoardURL    key.Binding
 	Comments        key.Binding
 	Tag             key.Binding
 	Boards          key.Binding
@@ -157,6 +158,10 @@ var DefaultKeyMap = KeyMap{
 	OpenURL: key.NewBinding(
 		key.WithKeys("ctrl+o"),
 		key.WithHelp("ctrl+o", "open url in browser"),
+	),
+	OpenBoardURL: key.NewBinding(
+		key.WithKeys("O"),
+		key.WithHelp("O", "open board in browser"),
 	),
 	Comments: key.NewBinding(
 		key.WithKeys("c", "ctrl+c"),

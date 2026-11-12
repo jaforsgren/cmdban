@@ -21,13 +21,13 @@ func stubBrowser(t *testing.T) *[]string {
 	return &opened
 }
 
-func TestCtrlOOnADOBoardOpensBoardPage(t *testing.T) {
+func TestShiftOOnADOBoardOpensBoardPage(t *testing.T) {
 	opened := stubBrowser(t)
 	cfg := adoTestConfig()
 	cfg.Boards[1].AzureDevOps.AssignedToMe = true
 	m := adoTestModel(cfg)
 
-	m.Update(tea.KeyMsg{Type: tea.KeyCtrlO})
+	m.Update(keyMsgFor("O"))
 
 	want := "https://dev.azure.com/org/proj/_boards/board/t/team/Stories?System.AssignedTo=%40me"
 	if len(*opened) != 1 || (*opened)[0] != want {
@@ -47,8 +47,19 @@ func TestCtrlOOnLocalBoardOpensTaskURL(t *testing.T) {
 	}
 }
 
-func TestCtrlOInCardOpensSelectedADOCard(t *testing.T) {
-	for _, mode := range []Mode{ModeFocus, ModeView} {
+func TestShiftOOnLocalBoardShowsMessage(t *testing.T) {
+	opened := stubBrowser(t)
+	m := NewModel(&config.Config{})
+
+	got, _ := m.Update(keyMsgFor("O"))
+
+	if len(*opened) != 0 || got.(Model).message == "" {
+		t.Fatalf("opened %v, message = %q; want nothing opened and an explanation", *opened, got.(Model).message)
+	}
+}
+
+func TestCtrlOOpensSelectedADOCard(t *testing.T) {
+	for _, mode := range []Mode{ModeNormal, ModeFocus, ModeView} {
 		opened := stubBrowser(t)
 		m := adoTestModel(adoTestConfig())
 		m.mode = mode

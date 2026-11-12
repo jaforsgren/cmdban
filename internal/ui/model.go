@@ -625,7 +625,11 @@ func (m Model) handleNormalMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case key.Matches(msg, m.keys.OpenURL):
 		m.gPressed = false
-		return m.openBoardOrTaskURL()
+		return m.openTaskURL()
+
+	case key.Matches(msg, m.keys.OpenBoardURL):
+		m.gPressed = false
+		return m.openBoardURL()
 
 	case key.Matches(msg, m.keys.Comments):
 		m.gPressed = false
@@ -1624,11 +1628,11 @@ func (m Model) openTaskURL() (tea.Model, tea.Cmd) {
 	return m.openURL(url)
 }
 
-// openBoardOrTaskURL is ctrl+o on the board: ADO boards open the board's web
-// page, local boards (which have none) open the selected task's URL.
-func (m Model) openBoardOrTaskURL() (tea.Model, tea.Cmd) {
+// openBoardURL opens the ADO board's web page; local boards have none.
+func (m Model) openBoardURL() (tea.Model, tea.Cmd) {
 	if !m.config.IsADOBoard() {
-		return m.openTaskURL()
+		m.message = "Only Azure DevOps boards have a web page"
+		return m, nil
 	}
 	return m.openURL(azuredevops.BoardWebURL(m.config.ActiveBoard().AzureDevOps))
 }
