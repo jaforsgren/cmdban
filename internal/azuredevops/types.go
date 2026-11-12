@@ -87,6 +87,7 @@ type TeamFieldValues struct {
 
 type ConnectionData struct {
 	AuthenticatedUser struct {
+		ID         string `json:"id"`
 		Properties struct {
 			Account struct {
 				Value string `json:"$value"`
@@ -239,4 +240,92 @@ type addCommentRequest struct {
 type CommentListResponse struct {
 	Count    int       `json:"count"`
 	Comments []Comment `json:"comments"`
+}
+
+type WorkItemRelation struct {
+	Rel string `json:"rel"`
+	URL string `json:"url"`
+}
+
+type WorkItemWithRelations struct {
+	ID        int                `json:"id"`
+	Relations []WorkItemRelation `json:"relations"`
+}
+
+type PullRequestReviewer struct {
+	DisplayName string `json:"displayName"`
+	Vote        int    `json:"vote"`
+}
+
+type GitRepository struct {
+	ID      string  `json:"id"`
+	Name    string  `json:"name"`
+	WebURL  string  `json:"webUrl"`
+	Project Project `json:"project"`
+}
+
+type GitCommitRef struct {
+	CommitID string `json:"commitId"`
+}
+
+type PullRequest struct {
+	PullRequestID   int                   `json:"pullRequestId"`
+	Title           string                `json:"title"`
+	Description     string                `json:"description"`
+	Status          string                `json:"status"`
+	IsDraft         bool                  `json:"isDraft"`
+	TargetRefName   string                `json:"targetRefName"`
+	ClosedDate      string                `json:"closedDate"`
+	Repository      GitRepository         `json:"repository"`
+	Reviewers       []PullRequestReviewer `json:"reviewers"`
+	LastMergeCommit GitCommitRef          `json:"lastMergeCommit"`
+}
+
+type PullRequestComment struct {
+	CommentType string `json:"commentType"`
+	IsDeleted   bool   `json:"isDeleted"`
+}
+
+type PullRequestThread struct {
+	IsDeleted bool                 `json:"isDeleted"`
+	Comments  []PullRequestComment `json:"comments"`
+}
+
+type PullRequestThreadListResponse struct {
+	Value []PullRequestThread `json:"value"`
+}
+
+type BuildDefinitionRef struct {
+	Name string `json:"name"`
+}
+
+type BuildLinks struct {
+	Web struct {
+		Href string `json:"href"`
+	} `json:"web"`
+}
+
+type Build struct {
+	ID            int                `json:"id"`
+	BuildNumber   string             `json:"buildNumber"`
+	Status        string             `json:"status"`
+	Result        string             `json:"result"`
+	SourceVersion string             `json:"sourceVersion"`
+	Definition    BuildDefinitionRef `json:"definition"`
+	Links         BuildLinks         `json:"_links"`
+}
+
+type BuildListResponse struct {
+	Value []Build `json:"value"`
+}
+
+type PullRequestListResponse struct {
+	Value []PullRequest `json:"value"`
+}
+
+// RelationPatchValue is a link added to a work item's relations.
+type RelationPatchValue struct {
+	Rel        string            `json:"rel"`
+	URL        string            `json:"url"`
+	Attributes map[string]string `json:"attributes"`
 }

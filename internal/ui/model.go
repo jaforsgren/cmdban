@@ -59,6 +59,7 @@ const (
 	ModeComments
 	ModeFocus
 	ModeMoveBoard
+	ModePRPicker
 )
 
 type Model struct {
@@ -100,10 +101,21 @@ type Model struct {
 	commentsWorkItemID int
 	commentsReturnMode Mode
 	viewCommentsPane   bool
+
+	linkedPRs           []azuredevops.PullRequestSummary
+	linkedPRsLoading    bool
+	linkedPRsWorkItemID int
+	prPicker            prPickerState
+
+	liveReload           bool
+	liveReloadGeneration int
 }
 
 type tasksLoadedMsg struct {
 	tasks []*task.Task
+	// background marks a live reload sync, which leaves the footer message
+	// alone.
+	background bool
 }
 
 type taskSavedMsg struct {
@@ -188,7 +200,7 @@ func (m Model) loadTasks() tea.Msg {
 	if err != nil {
 		return errMsg{err}
 	}
-	return tasksLoadedMsg{tasks}
+	return tasksLoadedMsg{tasks: tasks}
 }
 
 func (m Model) loadADOTasks() tea.Msg {
@@ -205,7 +217,7 @@ func (m Model) loadADOTasks() tea.Msg {
 		"ADO sync %s/%s/%s source=%s iteration=%q: fetched %d, showing %d",
 		adoCfg.Org, adoCfg.Project, adoCfg.Team, diag.Source, diag.IterationPath, diag.FetchedCount, diag.ReturnedCount,
 	))
-	return tasksLoadedMsg{tasks}
+	return tasksLoadedMsg{tasks: tasks}
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -224,11 +236,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.board.AddTask(t)
 		}
 		m.clampSelection()
-		if m.config.IsADOBoard() {
-			m.lastSyncTime = time.Now()
+		m.lastSyncTime = time.Now()
+		if m.config.IsADOBoard() && !msg.background {
 			m.message = ""
 		}
 		return m, nil
+
+	case liveReloadTickMsg:
+		return m.handleLiveReloadTick(msg)
 
 	case taskSavedMsg:
 		return m, m.loadTasks
@@ -271,11 +286,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case commentsLoadedMsg:
 		return m.handleCommentsLoaded(msg)
 
+	case linkedPRsLoadedMsg:
+		return m.handleLinkedPRsLoaded(msg)
+
+	case myPRsLoadedMsg:
+		return m.handleMyPRsLoaded(msg)
+
+	case prLinkedMsg:
+		return m.handlePRLinked(msg)
+
 	case errMsg:
 		m.err = msg.err
 		m.message = "Error: " + msg.err.Error()
 		m.logs.Error(msg.err.Error())
 		m.commentsLoading = false
+		m.linkedPRsLoading = false
+		m.prPicker.loading = false
 		return m, nil
 
 	case taskOrderSavedMsg:
@@ -358,6 +384,10 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	if m.mode == ModeMoveBoard {
 		return m.handleMoveBoardMode(msg)
+	}
+
+	if m.mode == ModePRPicker {
+		return m.handlePRPickerMode(msg)
 	}
 
 	return m.handleNormalMode(msg)
@@ -534,6 +564,10 @@ func (m Model) handleNormalMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.mode = ModeBoardSelector
 		m.gPressed = false
 		return m, nil
+
+	case key.Matches(msg, m.keys.LiveReload):
+		m.gPressed = false
+		return m.toggleLiveReload()
 
 	case key.Matches(msg, m.keys.NextRecentBoard):
 		m.gPressed = false
@@ -717,6 +751,9 @@ func (m Model) handleViewMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case key.Matches(msg, m.keys.CommentsUp):
 		return m.scrollCommentsPane(-1)
+
+	case key.Matches(msg, m.keys.LinkPR):
+		return m.openPRPicker()
 
 	case key.Matches(msg, m.keys.Up):
 		if m.viewScroll > 0 {
@@ -1994,6 +2031,10 @@ func (m Model) renderBoard() string {
 		return m.renderLogs()
 	}
 
+	if m.mode == ModePRPicker {
+		return m.renderPRPicker()
+	}
+
 	if m.mode == ModeComments {
 		return m.renderComments()
 	}
@@ -2370,7 +2411,7 @@ func (m Model) renderFooter() string {
 }
 
 const defaultDetailFooterHint = "[q: back, j/k: scroll, ctrl+g: edit in nvim, ctrl+o: open url, ctrl+c: comments]"
-const defaultADODetailFooterHint = "[q: back  H/L: move lane  e: edit title  j/k: scroll  tab: comments  J/K: scroll comments]"
+const defaultADODetailFooterHint = "[q: back  H/L: move lane  e: edit title  j/k: scroll  tab: PRs & comments  l: link PR]"
 
 // renderTaskDetail shows the selected card, with its comments beside it
 // when the comments pane is toggled on.
@@ -2380,8 +2421,8 @@ func (m Model) renderTaskDetail() string {
 	}
 	commentsWidth := m.commentsSidePaneWidth()
 	detail := m.renderTaskDetailPane(m.width-commentsWidth, defaultDetailFooterHint, defaultADODetailFooterHint)
-	comments := m.renderCommentsPane(commentsWidth, lipgloss.Height(detail))
-	return lipgloss.JoinHorizontal(lipgloss.Top, detail, comments)
+	side := m.renderSidePane(commentsWidth, lipgloss.Height(detail))
+	return lipgloss.JoinHorizontal(lipgloss.Top, detail, side)
 }
 
 // renderTaskDetailPane renders the selected task's detail — description or

@@ -4,6 +4,7 @@ import (
 	"maps"
 	"slices"
 	"strings"
+	"time"
 )
 
 type BoardType string
@@ -157,7 +158,19 @@ type Config struct {
 	Boards       []Board  `yaml:"boards"`
 	IgnoreFiles  []string `yaml:"ignore_files,omitempty"`
 	RecentBoards []string `yaml:"recent_boards,omitempty"`
-	configPath   string
+	// LiveReloadSeconds is how often live reload re-syncs; 0 means the
+	// default.
+	LiveReloadSeconds int `yaml:"live_reload_seconds,omitempty"`
+	configPath        string
+}
+
+const DefaultLiveReloadInterval = 30 * time.Second
+
+func (c *Config) LiveReloadInterval() time.Duration {
+	if c.LiveReloadSeconds <= 0 {
+		return DefaultLiveReloadInterval
+	}
+	return time.Duration(c.LiveReloadSeconds) * time.Second
 }
 
 const MaxRecentBoards = 4

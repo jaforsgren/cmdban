@@ -38,14 +38,15 @@ var (
 			BorderStyle(lipgloss.NormalBorder()).
 			BorderBottom(true).
 			BorderForeground(BorderColor)
-	topBarTitleStyle     = lipgloss.NewStyle().Foreground(ActiveColor).Bold(true)
-	topBarHeadingStyle   = lipgloss.NewStyle().Foreground(SubtleColor).Bold(true)
-	topBarSeparatorStyle = lipgloss.NewStyle().Foreground(BorderColor)
-	topBarLabelStyle     = lipgloss.NewStyle().Foreground(ActiveColor)
-	topBarValueStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("15"))
-	topBarDimStyle       = lipgloss.NewStyle().Foreground(SubtleColor)
-	topBarActiveStyle    = lipgloss.NewStyle().Foreground(SuccessColor).Bold(true)
-	topBarKeyStyle       = lipgloss.NewStyle().Foreground(HighlightColor).Bold(true)
+	topBarTitleStyle      = lipgloss.NewStyle().Foreground(ActiveColor).Bold(true)
+	topBarHeadingStyle    = lipgloss.NewStyle().Foreground(SubtleColor).Bold(true)
+	topBarSeparatorStyle  = lipgloss.NewStyle().Foreground(BorderColor)
+	topBarLabelStyle      = lipgloss.NewStyle().Foreground(ActiveColor)
+	topBarValueStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("15"))
+	topBarDimStyle        = lipgloss.NewStyle().Foreground(SubtleColor)
+	topBarActiveStyle     = lipgloss.NewStyle().Foreground(SuccessColor).Bold(true)
+	topBarKeyStyle        = lipgloss.NewStyle().Foreground(HighlightColor).Bold(true)
+	topBarLiveReloadStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#a05a5a"))
 )
 
 type shortcut struct {
@@ -145,11 +146,11 @@ func (m Model) buildContextInfo() []string {
 		lines = append(lines,
 			topBarLine("🔗", "Source", topBarValueStyle.Render(truncateName(ado.Org+"/"+ado.Project+"/"+ado.Team))),
 			topBarLine("🧱", "Lanes", topBarValueStyle.Render(m.laneModeDescription(ado))),
-			topBarLine("🔄", "Synced", topBarValueStyle.Render(m.syncedDescription())),
 		)
 	} else {
 		lines = append(lines, topBarLine("📁", "Dir", topBarValueStyle.Render(truncateName(m.config.TaskDirectory()))))
 	}
+	lines = append(lines, m.syncedLine())
 
 	lines = append(lines, topBarLine("📝", "Tasks", topBarValueStyle.Render(m.taskCountDescription())))
 	if m.config.IsADOBoard() {
@@ -168,6 +169,14 @@ func (m Model) laneModeDescription(ado *config.AzureDevOpsConfig) string {
 		label += " · " + ado.BoardLevel
 	}
 	return label
+}
+
+// syncedLine turns a dull red while live reload is on.
+func (m Model) syncedLine() string {
+	if m.liveReload {
+		return "🔄 " + topBarLiveReloadStyle.Render("Synced: "+m.syncedDescription()+" · live")
+	}
+	return topBarLine("🔄", "Synced", topBarValueStyle.Render(m.syncedDescription()))
 }
 
 func (m Model) syncedDescription() string {
@@ -339,7 +348,7 @@ var (
 	}
 	boardShortcuts = []shortcut{
 		{"e", "edit"}, {"d", "toggle done"}, {"x", "delete"}, {"t", "tag"}, {"m", "mark"}, {"/", "search"},
-		{"r", "refresh"}, {".", "minimize lane"}, {"ctrl+b", "boards"}, {"ctrl+n", "next recent board"},
+		{"r", "refresh"}, {"R", "live reload"}, {".", "minimize lane"}, {"ctrl+b", "boards"}, {"ctrl+n", "next recent board"},
 		{"ctrl+m", "move board"}, {":", "command"}, {"?", "help"},
 	}
 	adoBoardShortcuts = []shortcut{
@@ -364,7 +373,7 @@ func shortcutsForMode(mode Mode) []shortcut {
 		return []shortcut{{"j/k", "scroll"}, {"g/G", "top/bottom"}, {"?/q", "close help"}}
 	case ModeView:
 		return []shortcut{
-			{"q", "back"}, {"j/k", "scroll"}, {"tab", "comments pane"}, {"J/K", "scroll comments"}, {"c", "comments view"},
+			{"q", "back"}, {"j/k", "scroll"}, {"tab", "PRs & comments pane"}, {"J/K", "scroll comments"}, {"c", "comments view"}, {"l", "link my PR"},
 			{"H/L", "move lane"}, {"e", "edit"}, {"d", "toggle done"}, {"x", "delete"},
 			{"ctrl+g", "editor"}, {"ctrl+o", "open url"}, {"ctrl+m", "move board"}, {"r", "refresh"},
 		}
@@ -377,6 +386,8 @@ func shortcutsForMode(mode Mode) []shortcut {
 		return []shortcut{{"j/k", "navigate"}, {"enter", "switch"}, {"a", "new local board"}, {"A", "new ADO board"}, {"q", "close"}}
 	case ModeMoveBoard:
 		return []shortcut{{"j/k", "navigate"}, {"enter", "move"}, {"q", "cancel"}}
+	case ModePRPicker:
+		return []shortcut{{"j/k", "navigate"}, {"enter", "link PR"}, {"q", "cancel"}}
 	case ModePATManager:
 		return []shortcut{{"j/k", "navigate"}, {"a", "add"}, {"x", "delete"}, {"space", "reveal"}, {"q", "close"}}
 	case ModeLogs:
@@ -418,6 +429,8 @@ func (m Model) modeName() string {
 		return "FOCUS"
 	case ModeMoveBoard:
 		return "MOVE"
+	case ModePRPicker:
+		return "LINK PR"
 	default:
 		return "NORMAL"
 	}

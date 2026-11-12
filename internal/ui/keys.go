@@ -40,6 +40,8 @@ type KeyMap struct {
 	ToggleLanes     key.Binding
 	NextRecentBoard key.Binding
 	NewBug          key.Binding
+	LinkPR          key.Binding
+	LiveReload      key.Binding
 	CommentsPane    key.Binding
 	CommentsDown    key.Binding
 	CommentsUp      key.Binding
@@ -193,6 +195,14 @@ var DefaultKeyMap = KeyMap{
 	NewBug: key.NewBinding(
 		key.WithKeys("b"),
 		key.WithHelp("b", "new bug (ADO)"),
+	),
+	LiveReload: key.NewBinding(
+		key.WithKeys("R"),
+		key.WithHelp("R", "toggle live reload"),
+	),
+	LinkPR: key.NewBinding(
+		key.WithKeys("l"),
+		key.WithHelp("l", "link one of my PRs"),
 	),
 	CommentsPane: key.NewBinding(
 		key.WithKeys("tab"),

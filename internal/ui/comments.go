@@ -64,10 +64,12 @@ func (m Model) toggleCommentsPane() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.viewCommentsPane = true
-	return m.startLoadingComments(t)
+	m, loadComments := m.startLoadingComments(t)
+	m, loadPRs := m.startLoadingLinkedPRs(t.ADOItemID)
+	return m, tea.Batch(loadComments, loadPRs)
 }
 
-func (m Model) startLoadingComments(t *task.Task) (tea.Model, tea.Cmd) {
+func (m Model) startLoadingComments(t *task.Task) (Model, tea.Cmd) {
 	m.comments = nil
 	m.commentsScroll = 0
 	m.commentsLoading = true
@@ -220,7 +222,7 @@ func (m Model) scrollCommentsPane(delta int) (tea.Model, tea.Cmd) {
 	if !m.viewCommentsPane {
 		return m, nil
 	}
-	maxScroll := m.maxCommentsScroll(m.commentsSidePaneWidth(), m.bodyHeight())
+	maxScroll := m.maxCommentsScroll(m.commentsSidePaneWidth(), m.sidePaneCommentsHeight())
 	m.commentsScroll = min(max(m.commentsScroll+delta, 0), maxScroll)
 	return m, nil
 }

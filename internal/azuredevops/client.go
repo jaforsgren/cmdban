@@ -380,12 +380,19 @@ func (c *Client) TeamDefaultAreaPath() (string, error) {
 	return values.DefaultValue, nil
 }
 
+// connectionData describes the PAT owner as seen by the organisation.
+func (c *Client) connectionData() (ConnectionData, error) {
+	connectionURL := fmt.Sprintf("https://dev.azure.com/%s/_apis/connectionData", url.PathEscape(c.org))
+	var data ConnectionData
+	err := c.get(connectionURL, &data)
+	return data, err
+}
+
 // CurrentUserUniqueName returns the PAT owner's account name, the value
 // System.AssignedTo accepts to assign a work item to them.
 func (c *Client) CurrentUserUniqueName() (string, error) {
-	connectionURL := fmt.Sprintf("https://dev.azure.com/%s/_apis/connectionData", url.PathEscape(c.org))
-	var data ConnectionData
-	if err := c.get(connectionURL, &data); err != nil {
+	data, err := c.connectionData()
+	if err != nil {
 		return "", err
 	}
 	name := data.AuthenticatedUser.Properties.Account.Value

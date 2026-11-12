@@ -150,6 +150,7 @@ See **[docs/azure-devops.md](docs/azure-devops.md)** for full setup instructions
 | `/` | Search |
 | `r` | Refresh |
 | `ctrl+n` | Next recent board |
+| `R` | Toggle live reload (off by default): re-syncs every 30s, or `live_reload_seconds` in the config; the topbar's Synced line turns red while on |
 
 ### Azure DevOps boards
 
@@ -161,7 +162,8 @@ See **[docs/azure-devops.md](docs/azure-devops.md)** for full setup instructions
 | `ctrl+o` | Open work item in browser |
 | `c` / `ctrl+c` | Comments view (the topbar shows the selected card's comment count) |
 | `a` (in comments view) | Write a comment in `$EDITOR`; save and quit posts it as markdown, an empty file discards it |
-| `tab` (in task view) | Toggle a comments pane beside the work item details |
+| `tab` (in task view) | Toggle a side pane beside the work item details: linked PRs (link, status, approvals, comment count, description excerpt, pipeline runs of the merge commit) above the comments |
+| `l` (in task view) | Link one of your own PRs (any project in the org) to the work item |
 | `J` / `K` (in task view) | Scroll the comments pane |
 
 ### Commands

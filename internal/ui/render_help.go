@@ -57,6 +57,7 @@ func helpSections() []helpSection {
 		{"Focus", shortcutsForMode(ModeFocus)},
 		{"Board switcher", shortcutsForMode(ModeBoardSelector)},
 		{"Move to board", shortcutsForMode(ModeMoveBoard)},
+		{"Link PR", shortcutsForMode(ModePRPicker)},
 		{"PAT manager", shortcutsForMode(ModePATManager)},
 		{"Logs", shortcutsForMode(ModeLogs)},
 		{"Comments", shortcutsForMode(ModeComments)},

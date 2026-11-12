@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestLoadDefaultConfig(t *testing.T) {
@@ -583,5 +584,14 @@ func TestLaneSlug(t *testing.T) {
 		if got := LaneSlug(in); got != want {
 			t.Errorf("LaneSlug(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+func TestLiveReloadIntervalDefaultsAndConfigures(t *testing.T) {
+	if got := (&Config{}).LiveReloadInterval(); got != DefaultLiveReloadInterval {
+		t.Fatalf("default LiveReloadInterval() = %v, want %v", got, DefaultLiveReloadInterval)
+	}
+	if got := (&Config{LiveReloadSeconds: 10}).LiveReloadInterval(); got != 10*time.Second {
+		t.Fatalf("LiveReloadInterval() = %v, want 10s", got)
 	}
 }
