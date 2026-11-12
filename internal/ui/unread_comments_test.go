@@ -82,3 +82,22 @@ func TestTypesSectionListsUnreadCommentsKey(t *testing.T) {
 		t.Fatalf("TYPES section = %q, want the <8> unread (1) row", section)
 	}
 }
+
+func TestUnreadCommentsInHiddenColumnsAreNotCounted(t *testing.T) {
+	cfg := adoTestConfig()
+	cfg.Boards[1].Columns[1].Hidden = true
+	m := NewModel(cfg)
+	m.width, m.height = testWidth, testHeight
+	m.commentReads = commentread.New(t.TempDir() + "/reads.yaml")
+	hidden := &task.Task{ID: "2", Title: "Hidden story", Status: "review", ADOWorkItemType: "User Story", ADOItemID: 2}
+	got, _ := m.Update(tasksLoadedMsg{tasks: []*task.Task{hidden}})
+	m = got.(Model)
+	hidden.ADOCommentCount++
+
+	if got := m.unreadCommentsTaskCount(); got != 0 {
+		t.Fatalf("unreadCommentsTaskCount() = %d, want 0 for a card in a hidden column", got)
+	}
+	if got := shownTitles(pressKey(t, m, "8")); len(got) != 0 {
+		t.Fatalf("key 8 shown = %v, want nothing from hidden columns", got)
+	}
+}
