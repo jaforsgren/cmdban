@@ -77,28 +77,59 @@ func TestWorkItemTypesUsePreferredOrderThenAlphabetical(t *testing.T) {
 	}
 }
 
-func TestTypeFilterKeySelectsTypeAndZeroClears(t *testing.T) {
+func shownTitles(m Model) []string {
+	var titles []string
+	for _, lane := range m.board.Lanes {
+		for _, t := range m.filterTasks(m.board.Tasks[lane]) {
+			titles = append(titles, t.Title)
+		}
+	}
+	slices.Sort(titles)
+	return titles
+}
+
+func TestDefaultTypeViewShowsStoriesAndBugs(t *testing.T) {
 	m := adoTestModel(adoTestConfig())
 
-	m = pressKey(t, m, "2")
-	if m.typeFilter != "Bug" {
-		t.Fatalf("typeFilter = %q, want %q", m.typeFilter, "Bug")
+	if got, want := shownTitles(m), []string{"Bug one", "Story one"}; !slices.Equal(got, want) {
+		t.Fatalf("shown = %v, want %v", got, want)
 	}
-	if got := m.filterTasks(m.board.Tasks["review"]); len(got) != 0 {
-		t.Fatalf("filterTasks(review) = %d tasks, want 0 with a Bug filter", len(got))
+	if m.hasActiveFilter() {
+		t.Fatal("hasActiveFilter() = true for the default view, want false")
+	}
+}
+
+func TestDefaultTypeViewShowsEverythingWithoutStoriesOrBugs(t *testing.T) {
+	m := NewModel(adoTestConfig())
+	m.board.AddTask(&task.Task{ID: "1", Title: "Epic one", Status: "todo", ADOWorkItemType: "Epic", ADOItemID: 1})
+
+	if got := shownTitles(m); !slices.Equal(got, []string{"Epic one"}) {
+		t.Fatalf("shown = %v, want the epic when there are no stories or bugs", got)
+	}
+}
+
+func TestTypeFilterKeysSelectSingleAllAndDefault(t *testing.T) {
+	m := pressKey(t, adoTestModel(adoTestConfig()), "3")
+	if got := shownTitles(m); !slices.Equal(got, []string{"Task one"}) {
+		t.Fatalf("key 3 shown = %v, want only the Task", got)
+	}
+
+	m = pressKey(t, m, "9")
+	if got := shownTitles(m); len(got) != 4 {
+		t.Fatalf("key 9 shown = %v, want all 4 tasks", got)
 	}
 
 	m = pressKey(t, m, "0")
-	if m.typeFilter != "" {
-		t.Fatalf("typeFilter = %q, want cleared", m.typeFilter)
+	if m.typeFilter.kind != typeFilterDefault {
+		t.Fatalf("typeFilter = %+v after 0, want the default view", m.typeFilter)
 	}
 }
 
 func TestTypeFilterKeyBeyondTypesShowsMessage(t *testing.T) {
-	m := pressKey(t, adoTestModel(adoTestConfig()), "9")
+	m := pressKey(t, adoTestModel(adoTestConfig()), "8")
 
-	if m.typeFilter != "" || m.message == "" {
-		t.Fatalf("typeFilter = %q, message = %q; want no filter and an explanation", m.typeFilter, m.message)
+	if m.typeFilter.kind != typeFilterDefault || m.message == "" {
+		t.Fatalf("typeFilter = %+v, message = %q; want the default view and an explanation", m.typeFilter, m.message)
 	}
 }
 
@@ -107,21 +138,37 @@ func TestTypeFilterKeyOnLocalBoardShowsMessage(t *testing.T) {
 	cfg.CurrentBoard = "local"
 	m := pressKey(t, adoTestModel(cfg), "1")
 
-	if m.typeFilter != "" || m.message == "" {
-		t.Fatalf("typeFilter = %q, message = %q; want no filter and an explanation", m.typeFilter, m.message)
+	if m.typeFilter.kind != typeFilterDefault || m.message == "" {
+		t.Fatalf("typeFilter = %+v, message = %q; want no filter and an explanation", m.typeFilter, m.message)
 	}
 }
 
 func TestEscapeClearsTypeAndSearchFilters(t *testing.T) {
 	m := adoTestModel(adoTestConfig())
-	m.typeFilter = "Bug"
+	m.typeFilter = typeFilter{kind: typeFilterSingle, workItemType: "Bug"}
 	m.searchFilter = "one"
 
 	got, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	m = got.(Model)
 
 	if m.hasActiveFilter() {
-		t.Fatalf("filters = (%q, %q), want both cleared", m.typeFilter, m.searchFilter)
+		t.Fatalf("filters = (%+v, %q), want both cleared", m.typeFilter, m.searchFilter)
+	}
+}
+
+func TestCardsShowTypeGlyphOnlyForADOItems(t *testing.T) {
+	m := adoTestModel(adoTestConfig())
+
+	bug := m.renderTask(m.board.Tasks["todo"][0], false, 40, "")
+	if !strings.Contains(bug, typeGlyphs["Bug"].symbol) {
+		t.Fatalf("bug card missing its glyph: %q", bug)
+	}
+	local := m.renderTask(&task.Task{Title: "local"}, false, 40, "")
+	if strings.Contains(local, fallbackTypeGlyph.symbol) {
+		t.Fatalf("local card should have no type glyph: %q", local)
+	}
+	if lipgloss.Width(bug) != lipgloss.Width(local) {
+		t.Fatalf("card widths differ: bug %d, local %d", lipgloss.Width(bug), lipgloss.Width(local))
 	}
 }
 
@@ -181,7 +228,7 @@ func TestViewFillsTerminalHeight(t *testing.T) {
 
 func TestContextualShortcutsIncludeADOKeysOnlyOnADOBoards(t *testing.T) {
 	hasTypeFilter := func(shortcuts []shortcut) bool {
-		return slices.ContainsFunc(shortcuts, func(s shortcut) bool { return s.key == "0-9" })
+		return slices.ContainsFunc(shortcuts, func(s shortcut) bool { return s.key == "0/1-8/9" })
 	}
 
 	if !hasTypeFilter(adoTestModel(adoTestConfig()).contextualShortcuts()) {

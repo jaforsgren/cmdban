@@ -205,8 +205,11 @@ func (m Model) commentCountDescription() string {
 
 func (m Model) filterDescription() string {
 	var parts []string
-	if m.typeFilter != "" {
-		parts = append(parts, "type:"+m.typeFilter)
+	switch m.typeFilter.kind {
+	case typeFilterSingle:
+		parts = append(parts, "type:"+m.typeFilter.workItemType)
+	case typeFilterAllTypes:
+		parts = append(parts, "type:all")
 	}
 	if m.searchFilter != "" {
 		parts = append(parts, "/"+m.searchFilter)
@@ -239,33 +242,53 @@ func (m Model) buildRecentBoardsSection() []string {
 	return append(lines, topBarDimStyle.Render("<ctrl+n> next"))
 }
 
-// buildTypeFilterSection lists the number key for every work item type on
-// the board, marking the active filter, with a "+N more" row when they
-// don't all fit.
-func (m Model) buildTypeFilterSection() []string {
-	types := m.workItemTypes()
-	lines := []string{m.typeFilterLine(typeFilterAll, "all", m.typeFilter == "")}
+// typeFilterFixedRows are the default and all-types rows that bracket the
+// per-type rows in the TYPES section.
+const typeFilterFixedRows = 2
 
-	shown := types
-	if len(types) > topBarSectionRows-1 {
-		shown = types[:topBarSectionRows-2]
+// The TYPES section marks the active filter with an arrow rather than the
+// ●/○ markers used elsewhere, which would read as the Bug glyph.
+const (
+	typeFilterActiveMarker   = "▸ "
+	typeFilterInactiveMarker = "  "
+)
+
+// buildTypeFilterSection lists the number key for the default view, every
+// work item type on the board (with its glyph as a legend) and all types,
+// marking the active filter, with a "+N more" row when they don't all fit.
+func (m Model) buildTypeFilterSection() []string {
+	defaultGlyphs := ""
+	for _, workItemType := range defaultViewTypes {
+		defaultGlyphs += renderTypeGlyph(workItemType)
+	}
+	lines := []string{m.typeFilterLine(typeFilterKeyDefault, defaultGlyphs, "stories & bugs", m.typeFilter.kind == typeFilterDefault)}
+
+	types := m.workItemTypes()
+	shown := types[:min(len(types), maxTypeFilterTypes)]
+	typeRows := topBarSectionRows - typeFilterFixedRows
+	if len(shown) > typeRows {
+		shown = shown[:typeRows-1]
 	}
 	for i, workItemType := range shown {
 		label := fmt.Sprintf("%s (%d)", workItemType, m.workItemTypeCount(workItemType))
-		lines = append(lines, m.typeFilterLine(i+1, label, m.typeFilter == workItemType))
+		active := m.typeFilter.kind == typeFilterSingle && m.typeFilter.workItemType == workItemType
+		lines = append(lines, m.typeFilterLine(i+1, renderTypeGlyph(workItemType), label, active))
 	}
 	if len(shown) < len(types) {
 		lines = append(lines, topBarDimStyle.Render(fmt.Sprintf("+%d more", len(types)-len(shown))))
 	}
-	return lines
+	return append(lines, m.typeFilterLine(typeFilterKeyAllTypes, "", "all types", m.typeFilter.kind == typeFilterAllTypes))
 }
 
-func (m Model) typeFilterLine(index int, label string, active bool) string {
+func (m Model) typeFilterLine(index int, glyphs, label string, active bool) string {
 	keyLabel := topBarKeyStyle.Render(fmt.Sprintf("<%d>", index))
-	if active {
-		return keyLabel + " " + topBarActiveStyle.Render(activeMarker+label)
+	if glyphs != "" {
+		glyphs += " "
 	}
-	return keyLabel + " " + topBarValueStyle.Render(inactiveMarker+label)
+	if active {
+		return keyLabel + " " + topBarActiveStyle.Render(typeFilterActiveMarker) + glyphs + topBarActiveStyle.Render(label)
+	}
+	return keyLabel + " " + typeFilterInactiveMarker + glyphs + topBarValueStyle.Render(label)
 }
 
 // buildShortcutsDisplay flows the mode's shortcuts into as many columns of
@@ -320,7 +343,7 @@ var (
 		{"ctrl+m", "move board"}, {":", "command"}, {"?", "help"},
 	}
 	adoBoardShortcuts = []shortcut{
-		{"b", "new bug"}, {"0-9", "type filter"}, {"v", "column/state lanes"}, {"c", "comments"}, {"ctrl+o", "open url"},
+		{"b", "new bug"}, {"0/1-8/9", "type: default/one/all"}, {"v", "column/state lanes"}, {"c", "comments"}, {"ctrl+o", "open url"},
 	}
 )
 

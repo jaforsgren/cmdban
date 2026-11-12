@@ -156,7 +156,7 @@ See **[docs/azure-devops.md](docs/azure-devops.md)** for full setup instructions
 | Key | Action |
 |-----|--------|
 | `b` | New Bug, created like `a` (first column, assigned to you) |
-| `0`–`9` | Filter by work item type (`0` = all, numbers listed in the topbar's TYPES section) |
+| `0` / `1`–`8` / `9` | Work item type filter: `0` (default) shows User Stories and Bugs, `1`–`8` a single type as numbered in the topbar's TYPES section, `9` all types. Cards show a small type glyph: ◆ story, ● bug, ▪ task, ★ feature, ♛ epic |
 | `v` | Toggle lanes between Kanban board columns and work item states |
 | `ctrl+o` | Open work item in browser |
 | `c` / `ctrl+c` | Comments view (the topbar shows the selected card's comment count) |

@@ -15,7 +15,30 @@ import (
 // across syncs; types outside this list follow alphabetically.
 var preferredWorkItemTypeOrder = []string{"User Story", "Bug", "Task", "Feature", "Epic"}
 
-const typeFilterAll = 0
+// Number keys for the type filter: 0 is the default stories-and-bugs view,
+// 1–8 pick a single type and 9 shows every type.
+const (
+	typeFilterKeyDefault  = 0
+	typeFilterKeyAllTypes = 9
+	maxTypeFilterTypes    = typeFilterKeyAllTypes - 1
+)
+
+type typeFilterKind int
+
+const (
+	typeFilterDefault typeFilterKind = iota
+	typeFilterAllTypes
+	typeFilterSingle
+)
+
+// typeFilter is the active work item type selection on an ADO board.
+type typeFilter struct {
+	kind         typeFilterKind
+	workItemType string
+}
+
+// defaultViewTypes are the types the default (0) view shows.
+var defaultViewTypes = []string{"User Story", "Bug"}
 
 // workItemTypes lists the distinct ADO work item types on the board. Index i
 // is selected with number key i+1.
@@ -67,27 +90,54 @@ func (m Model) selectTypeFilter(digit string) (tea.Model, tea.Cmd) {
 		m.message = fmt.Sprintf("Invalid type filter key %q", digit)
 		return m, nil
 	}
-	if index == typeFilterAll {
-		m.typeFilter = ""
-		m.clampSelection()
-		return m, nil
-	}
 	types := m.workItemTypes()
-	if index > len(types) {
+	switch {
+	case index == typeFilterKeyDefault:
+		m.typeFilter = typeFilter{kind: typeFilterDefault}
+	case index == typeFilterKeyAllTypes:
+		m.typeFilter = typeFilter{kind: typeFilterAllTypes}
+	case index > len(types):
 		m.message = fmt.Sprintf("No work item type on key %d", index)
 		return m, nil
+	default:
+		m.typeFilter = typeFilter{kind: typeFilterSingle, workItemType: types[index-1]}
 	}
-	m.typeFilter = types[index-1]
 	m.clampSelection()
 	return m, nil
 }
 
-func (m Model) matchesTypeFilter(t *task.Task) bool {
-	return m.typeFilter == "" || t.ADOWorkItemType == m.typeFilter
+// typeFilterMatcher returns the predicate for the active type filter, which
+// applies only on ADO boards. The default view falls back to every type when
+// the board carries no stories or bugs, so boards such as an Epics backlog
+// never look empty.
+func (m Model) typeFilterMatcher() func(*task.Task) bool {
+	matchAll := func(*task.Task) bool { return true }
+	if !m.config.IsADOBoard() {
+		return matchAll
+	}
+	switch m.typeFilter.kind {
+	case typeFilterSingle:
+		return func(t *task.Task) bool { return t.ADOWorkItemType == m.typeFilter.workItemType }
+	case typeFilterDefault:
+		if !m.hasDefaultViewTypes() {
+			return matchAll
+		}
+		return func(t *task.Task) bool { return slices.Contains(defaultViewTypes, t.ADOWorkItemType) }
+	default:
+		return matchAll
+	}
 }
 
+func (m Model) hasDefaultViewTypes() bool {
+	return slices.ContainsFunc(m.workItemTypes(), func(workItemType string) bool {
+		return slices.Contains(defaultViewTypes, workItemType)
+	})
+}
+
+// hasActiveFilter reports a filter the user applied, which esc clears; the
+// default type view doesn't count.
 func (m Model) hasActiveFilter() bool {
-	return m.searchFilter != "" || m.typeFilter != ""
+	return m.searchFilter != "" || m.typeFilter.kind != typeFilterDefault
 }
 
 // toggleLaneMode switches a board-column ADO board between Kanban column

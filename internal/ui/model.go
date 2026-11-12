@@ -81,7 +81,7 @@ type Model struct {
 	tagSuggestions     []string
 	tagSuggestion      string
 	searchFilter       string
-	typeFilter         string
+	typeFilter         typeFilter
 	boardSelectorIndex int
 	moveBoardIndex     int
 	pendingBoardName   string
@@ -371,7 +371,7 @@ func (m Model) handleNormalMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.Escape):
 		if m.hasActiveFilter() {
 			m.searchFilter = ""
-			m.typeFilter = ""
+			m.typeFilter = typeFilter{}
 			m.clampSelection()
 			return m, nil
 		}
@@ -1122,13 +1122,11 @@ func (m Model) handlePATManagerMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) filterTasks(tasks []*task.Task) []*task.Task {
-	if !m.hasActiveFilter() {
-		return tasks
-	}
 	filter := strings.ToLower(m.searchFilter)
+	matchesType := m.typeFilterMatcher()
 	var filtered []*task.Task
 	for _, t := range tasks {
-		if !m.matchesTypeFilter(t) {
+		if !matchesType(t) {
 			continue
 		}
 		if strings.Contains(strings.ToLower(t.Title), filter) {
@@ -1882,7 +1880,7 @@ func (m Model) reorderTask(delta int) (tea.Model, tea.Cmd) {
 	tasks[idx], tasks[newIdx] = tasks[newIdx], tasks[idx]
 	m.board.Tasks[lane] = tasks
 
-	if !m.hasActiveFilter() {
+	if len(m.filterTasks(tasks)) == len(tasks) {
 		m.activeTask = newIdx
 	}
 
@@ -2271,6 +2269,9 @@ func (m Model) renderTask(t *task.Task, selected bool, width int, groupColor lip
 	// Reserve the last column for the tag-group bar so all rows in a lane
 	// stay aligned whether or not they carry a bar.
 	contentWidth := width - 1
+	if t.ADOWorkItemType != "" {
+		contentWidth -= typeGlyphCellWidth
+	}
 
 	prefix := ""
 	if t.Marked {
@@ -2306,6 +2307,9 @@ func (m Model) renderTask(t *task.Task, selected bool, width int, groupColor lip
 	}
 
 	box := style.Width(contentWidth).Render(title + adoBadge + tags + checkboxCounter)
+	if t.ADOWorkItemType != "" {
+		box = lipgloss.JoinHorizontal(lipgloss.Top, renderTypeGlyphCell(t.ADOWorkItemType, style.GetBackground(), lipgloss.Height(box)), box)
+	}
 
 	barChar := " "
 	barStyle := lipgloss.NewStyle()
@@ -2633,7 +2637,7 @@ func (m Model) activateBoard(name string) (tea.Model, tea.Cmd) {
 	m.mode = ModeNormal
 	m.lastSyncTime = time.Time{}
 	m.minimizedLanes = make(map[task.Status]bool)
-	m.typeFilter = ""
+	m.typeFilter = typeFilter{}
 	m.message = "Switched to board: " + name
 	if m.config.IsADOBoard() {
 		m.message = "Switched to board: " + name + " — syncing..."
