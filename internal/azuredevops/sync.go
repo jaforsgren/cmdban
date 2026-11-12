@@ -349,6 +349,15 @@ func FetchComments(adoCfg *config.AzureDevOpsConfig, pat string, workItemID int)
 	return comments, nil
 }
 
+// AddComment posts a markdown comment to a work item.
+func AddComment(adoCfg *config.AzureDevOpsConfig, pat string, workItemID int, text string) error {
+	client := NewClient(adoCfg.Org, adoCfg.Project, adoCfg.Team, pat)
+	if err := client.AddComment(workItemID, text); err != nil {
+		return fmt.Errorf("adding comment to work item %d: %w", workItemID, err)
+	}
+	return nil
+}
+
 func PushStateChange(adoCfg *config.AzureDevOpsConfig, pat string, t *task.Task, newLane task.Status) error {
 	if t.ADOItemID == 0 {
 		return fmt.Errorf("task %q has no ADO item ID", t.ID)

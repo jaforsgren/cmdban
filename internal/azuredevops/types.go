@@ -192,6 +192,10 @@ type Comment struct {
 	CreatedDate string      `json:"createdDate"`
 }
 
+type addCommentRequest struct {
+	Text string `json:"text"`
+}
+
 type CommentListResponse struct {
 	Count    int       `json:"count"`
 	Comments []Comment `json:"comments"`

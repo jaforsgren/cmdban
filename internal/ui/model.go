@@ -275,6 +275,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case editorFinishedMsg:
 		return m, m.loadTasks
 
+	case commentEditorFinishedMsg:
+		return m.handleCommentEditorFinished(msg)
+
+	case commentAddedMsg:
+		return m.handleCommentAdded(msg)
+
 	case adoEditorFinishedMsg:
 		return m.handleADOEditorFinished(msg)
 
@@ -1373,13 +1379,18 @@ func (m Model) clearLane() (tea.Model, tea.Cmd) {
 	}
 }
 
-func (m Model) openInEditor(filePath string) tea.Cmd {
+const defaultEditor = "nvim"
+
+func editorCommand(filePath string) *exec.Cmd {
 	editor := os.Getenv("EDITOR")
 	if editor == "" {
-		editor = "nvim"
+		editor = defaultEditor
 	}
+	return exec.Command(editor, filePath)
+}
 
-	c := exec.Command(editor, filePath)
+func (m Model) openInEditor(filePath string) tea.Cmd {
+	c := editorCommand(filePath)
 	return tea.ExecProcess(c, func(err error) tea.Msg {
 		return editorFinishedMsg{filePath: filePath}
 	})
@@ -1397,12 +1408,7 @@ func (m Model) openADOEditor(t *task.Task) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	editor := os.Getenv("EDITOR")
-	if editor == "" {
-		editor = "nvim"
-	}
-
-	c := exec.Command(editor, tmpPath)
+	c := editorCommand(tmpPath)
 	return m, tea.ExecProcess(c, func(err error) tea.Msg {
 		return adoEditorFinishedMsg{tempPath: tmpPath, task: t, execErr: err}
 	})
@@ -1539,12 +1545,7 @@ func openURLInBrowser(url string) error {
 }
 
 func (m Model) openConfigInEditor() tea.Cmd {
-	editor := os.Getenv("EDITOR")
-	if editor == "" {
-		editor = "nvim"
-	}
-
-	c := exec.Command(editor, m.config.ConfigPath())
+	c := editorCommand(m.config.ConfigPath())
 	return tea.ExecProcess(c, func(err error) tea.Msg {
 		return configEditorFinishedMsg{}
 	})

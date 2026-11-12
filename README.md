@@ -159,6 +159,7 @@ See **[docs/azure-devops.md](docs/azure-devops.md)** for full setup instructions
 | `v` | Toggle lanes between Kanban board columns and work item states |
 | `ctrl+o` | Open work item in browser |
 | `c` / `ctrl+c` | Comments view (the topbar shows the selected card's comment count) |
+| `a` (in comments view) | Write a comment in `$EDITOR`; save and quit posts it as markdown, an empty file discards it |
 | `tab` (in task view) | Toggle a comments pane beside the work item details |
 | `J` / `K` (in task view) | Scroll the comments pane |
 

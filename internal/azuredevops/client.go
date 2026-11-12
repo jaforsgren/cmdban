@@ -15,8 +15,13 @@ import (
 const apiVersion = "7.0"
 
 // commentsAPIVersion targets the work item comments endpoint, which is still
-// preview-only as of api-version 7.x.
-const commentsAPIVersion = "7.1-preview.3"
+// preview-only as of api-version 7.x; preview.4 is the first to accept the
+// format parameter.
+const commentsAPIVersion = "7.1-preview.4"
+
+// commentFormatMarkdown stores new comments as markdown, which ADO renders
+// natively, so editor input is posted without conversion.
+const commentFormatMarkdown = "markdown"
 
 type Client struct {
 	org     string
@@ -333,13 +338,23 @@ func (c *Client) CreateWorkItem(workItemType, title, iterationPath string, place
 	return &item, nil
 }
 
+func (c *Client) commentsURL(workItemID int) string {
+	return fmt.Sprintf("%s/_apis/wit/workItems/%d/comments", c.baseURL(), workItemID)
+}
+
+func (c *Client) addCommentURL(workItemID int) string {
+	return fmt.Sprintf("%s?format=%s&api-version=%s", c.commentsURL(workItemID), commentFormatMarkdown, commentsAPIVersion)
+}
+
+// AddComment posts a markdown comment to a work item.
+func (c *Client) AddComment(workItemID int, text string) error {
+	return c.post(c.addCommentURL(workItemID), addCommentRequest{Text: text}, nil)
+}
+
 // FetchComments returns a work item's comments, oldest first, with HTML
 // markup stripped from the comment text.
 func (c *Client) FetchComments(workItemID int) ([]Comment, error) {
-	url := fmt.Sprintf(
-		"%s/_apis/wit/workItems/%d/comments?api-version=%s",
-		c.baseURL(), workItemID, commentsAPIVersion,
-	)
+	url := fmt.Sprintf("%s?api-version=%s", c.commentsURL(workItemID), commentsAPIVersion)
 	var resp CommentListResponse
 	if err := c.get(url, &resp); err != nil {
 		return nil, err

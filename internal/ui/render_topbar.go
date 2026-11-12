@@ -359,7 +359,7 @@ func shortcutsForMode(mode Mode) []shortcut {
 	case ModeLogs:
 		return []shortcut{{"j/k", "scroll"}, {"g/G", "top/bottom"}, {"x", "clear"}, {"q", "close"}}
 	case ModeComments:
-		return []shortcut{{"j/k", "scroll"}, {"g/G", "top/bottom"}, {"q", "close"}}
+		return []shortcut{{"a", "add comment"}, {"j/k", "scroll"}, {"g/G", "top/bottom"}, {"q", "close"}}
 	default:
 		return nil
 	}

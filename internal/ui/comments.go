@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -98,6 +99,9 @@ func (m Model) handleCommentsLoaded(msg commentsLoadedMsg) (tea.Model, tea.Cmd) 
 	}
 	m.commentsLoading = false
 	m.comments = msg.comments
+	if t := m.findTaskByADOItemID(msg.workItemID); t != nil {
+		t.ADOCommentCount = len(msg.comments)
+	}
 	return m, nil
 }
 
@@ -112,10 +116,103 @@ func (m Model) handleCommentsMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.commentsScroll = 0
 	case "G":
 		m.commentsScroll = maxScroll
+	case "a":
+		return m.openCommentEditor()
 	case "esc", "q":
 		m.mode = m.commentsReturnMode
 	}
 	return m, nil
+}
+
+type commentEditorFinishedMsg struct {
+	tempPath   string
+	workItemID int
+	execErr    error
+}
+
+type commentAddedMsg struct {
+	workItemID int
+}
+
+// openCommentEditor opens an empty markdown file in $EDITOR; saving it with
+// content posts the comment, leaving it empty discards it.
+func (m Model) openCommentEditor() (tea.Model, tea.Cmd) {
+	workItemID := m.commentsWorkItemID
+	f, err := os.CreateTemp("", fmt.Sprintf("cmdban-comment-%d-*.md", workItemID))
+	if err != nil {
+		m.message = "Error creating temp file: " + err.Error()
+		m.logs.Error(m.message)
+		return m, nil
+	}
+	f.Close()
+
+	return m, tea.ExecProcess(editorCommand(f.Name()), func(err error) tea.Msg {
+		return commentEditorFinishedMsg{tempPath: f.Name(), workItemID: workItemID, execErr: err}
+	})
+}
+
+func (m Model) handleCommentEditorFinished(msg commentEditorFinishedMsg) (tea.Model, tea.Cmd) {
+	defer os.Remove(msg.tempPath)
+
+	if msg.execErr != nil {
+		m.message = "Editor error: " + msg.execErr.Error()
+		m.logs.Error(m.message)
+		return m, nil
+	}
+	content, err := os.ReadFile(msg.tempPath)
+	if err != nil {
+		m.message = "Error reading comment: " + err.Error()
+		m.logs.Error(m.message)
+		return m, nil
+	}
+	text := strings.TrimSpace(string(content))
+	if text == "" {
+		m.message = "Empty comment; nothing posted"
+		return m, nil
+	}
+
+	m.message = "Posting comment..."
+	return m, m.postComment(msg.workItemID, text)
+}
+
+func (m Model) postComment(workItemID int, text string) tea.Cmd {
+	adoCfg := m.config.ActiveBoard().AzureDevOps
+	return func() tea.Msg {
+		token, ok := m.patStore.Get(adoCfg.PAT)
+		if !ok {
+			return errMsg{fmt.Errorf("PAT %q not found — run :pats to add it", adoCfg.PAT)}
+		}
+		if err := azuredevops.AddComment(adoCfg, token, workItemID, text); err != nil {
+			return errMsg{err}
+		}
+		return commentAddedMsg{workItemID: workItemID}
+	}
+}
+
+// handleCommentAdded reloads the comments so the new one shows up; the
+// card's count is refreshed from that reload. If the user has moved on to
+// another work item, its count is bumped instead.
+func (m Model) handleCommentAdded(msg commentAddedMsg) (tea.Model, tea.Cmd) {
+	m.message = "Comment posted"
+	if msg.workItemID != m.commentsWorkItemID {
+		if t := m.findTaskByADOItemID(msg.workItemID); t != nil {
+			t.ADOCommentCount++
+		}
+		return m, nil
+	}
+	m.commentsLoading = true
+	return m, m.fetchComments(msg.workItemID)
+}
+
+func (m Model) findTaskByADOItemID(workItemID int) *task.Task {
+	for _, lane := range m.board.Lanes {
+		for _, t := range m.board.Tasks[lane] {
+			if t.ADOItemID == workItemID {
+				return t
+			}
+		}
+	}
+	return nil
 }
 
 // scrollCommentsPane scrolls the side pane in the task view by delta lines.

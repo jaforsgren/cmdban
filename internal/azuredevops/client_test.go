@@ -177,3 +177,35 @@ func TestCommentListResponseUnmarshal(t *testing.T) {
 		t.Fatalf("resp = %+v, want %+v", resp, want)
 	}
 }
+
+func TestAddCommentURLRequestsMarkdownFormat(t *testing.T) {
+	c := NewClient("org", "proj", "team", "pat")
+
+	got := c.addCommentURL(42)
+	want := "https://dev.azure.com/org/proj/_apis/wit/workItems/42/comments?format=markdown&api-version=" + commentsAPIVersion
+	if got != want {
+		t.Fatalf("addCommentURL() = %q, want %q", got, want)
+	}
+}
+
+func TestClientPostSendsAddCommentPayload(t *testing.T) {
+	var body map[string]string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("method = %s, want POST", r.Method)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("decoding body: %v", err)
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	c := NewClient("org", "proj", "team", "pat")
+	if err := c.post(srv.URL, addCommentRequest{Text: "**done**"}, nil); err != nil {
+		t.Fatalf("post() error = %v", err)
+	}
+	if body["text"] != "**done**" {
+		t.Fatalf("payload text = %q, want %q", body["text"], "**done**")
+	}
+}
