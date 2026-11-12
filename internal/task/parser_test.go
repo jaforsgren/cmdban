@@ -86,15 +86,15 @@ func TestWriteMarkdownFile(t *testing.T) {
 		t.Error("Written file should contain title")
 	}
 
-	if !strings.Contains(contentStr, "@status:tomorrow") {
+	if !strings.Contains(contentStr, "@status tomorrow\n") {
 		t.Error("Written file should contain status")
 	}
 
-	if !strings.Contains(contentStr, "@priority:3") {
+	if !strings.Contains(contentStr, "@priority 3\n") {
 		t.Error("Written file should contain priority")
 	}
 
-	if !strings.Contains(contentStr, "@test") {
+	if !strings.Contains(contentStr, "@tags test,write\n") {
 		t.Error("Written file should contain tags")
 	}
 }
@@ -506,7 +506,7 @@ func TestParseFooterVariations(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			task := &Task{Tags: []string{}}
-			parseFooter(task, tc.footer)
+			parseFooter(task, []string{tc.footer})
 
 			if task.Status != tc.expectedStatus {
 				t.Errorf("Expected status '%s', got '%s'", tc.expectedStatus, task.Status)

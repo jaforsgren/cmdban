@@ -1,7 +1,6 @@
 package task
 
 import (
-	"bufio"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,24 +9,25 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"cmdban/internal/fsutil"
 )
 
 var (
-	plainTagRegex     = regexp.MustCompile(`@([\w][-\w]*)(?:\s|$)`)
-	statusRegex       = regexp.MustCompile(`@status:([\w][-\w]*)`)
-	priorityRegex     = regexp.MustCompile(`@priority:(\d+)`)
-	orderRegex        = regexp.MustCompile(`@order:(\d+)`)
-	markedRegex       = regexp.MustCompile(`@marked`)
 	checkedBoxRegex   = regexp.MustCompile(`(?m)^- \[x\]`)
 	uncheckedBoxRegex = regexp.MustCompile(`(?m)^- \[ \]`)
 )
 
+const (
+	titlePrefix  = "# "
+	taskFileMode = 0644
+)
+
 func ParseMarkdownFile(path string) (*Task, error) {
-	file, err := os.Open(path)
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
-	defer file.Close()
 
 	task := &Task{
 		ID:       filepath.Base(path),
@@ -36,32 +36,16 @@ func ParseMarkdownFile(path string) (*Task, error) {
 		Tags:     []string{},
 	}
 
-	info, err := file.Stat()
-	if err == nil {
+	if info, err := os.Stat(path); err == nil {
 		task.CreatedAt = info.ModTime()
 		task.UpdatedAt = info.ModTime()
 	}
 
-	scanner := bufio.NewScanner(file)
-	var lines []string
-	var footerLines []string
-	inFooter := false
+	normalized := strings.ReplaceAll(string(data), "\r\n", "\n")
+	lines, footerLines := splitFooter(strings.Split(normalized, "\n"))
 
-	for scanner.Scan() {
-		line := scanner.Text()
-		if strings.HasPrefix(line, "---") && len(lines) > 0 {
-			inFooter = true
-			continue
-		}
-		if inFooter {
-			footerLines = append(footerLines, line)
-		} else {
-			lines = append(lines, line)
-		}
-	}
-
-	if len(lines) > 0 && strings.HasPrefix(lines[0], "# ") {
-		task.Title = strings.TrimPrefix(lines[0], "# ")
+	if len(lines) > 0 && strings.HasPrefix(lines[0], titlePrefix) {
+		task.Title = strings.TrimPrefix(lines[0], titlePrefix)
 		lines = lines[1:]
 	}
 
@@ -69,34 +53,9 @@ func ParseMarkdownFile(path string) (*Task, error) {
 	task.CheckboxDone = len(checkedBoxRegex.FindAllString(task.Description, -1))
 	task.CheckboxTotal = task.CheckboxDone + len(uncheckedBoxRegex.FindAllString(task.Description, -1))
 
-	footer := strings.Join(footerLines, " ")
-	parseFooter(task, footer)
+	parseFooter(task, footerLines)
 
-	return task, scanner.Err()
-}
-
-func parseFooter(task *Task, footer string) {
-	if matches := statusRegex.FindStringSubmatch(footer); len(matches) > 1 {
-		task.Status = Status(matches[1])
-	}
-
-	if matches := priorityRegex.FindStringSubmatch(footer); len(matches) > 1 {
-		fmt.Sscanf(matches[1], "%d", &task.Priority)
-	}
-
-	if matches := orderRegex.FindStringSubmatch(footer); len(matches) > 1 {
-		fmt.Sscanf(matches[1], "%d", &task.Order)
-	}
-
-	task.Marked = markedRegex.MatchString(footer)
-
-	tags := plainTagRegex.FindAllStringSubmatch(footer, -1)
-	for _, match := range tags {
-		tag := match[1]
-		if tag != "marked" {
-			task.Tags = append(task.Tags, tag)
-		}
-	}
+	return task, nil
 }
 
 func WriteMarkdownFile(task *Task) error {
@@ -105,7 +64,7 @@ func WriteMarkdownFile(task *Task) error {
 	}
 	var sb strings.Builder
 
-	sb.WriteString("# ")
+	sb.WriteString(titlePrefix)
 	sb.WriteString(task.Title)
 	sb.WriteString("\n\n")
 
@@ -114,27 +73,13 @@ func WriteMarkdownFile(task *Task) error {
 		sb.WriteString("\n\n")
 	}
 
-	sb.WriteString("---\n")
-	sb.WriteString(fmt.Sprintf("@status:%s", task.Status))
-
-	if task.Priority > 0 {
-		sb.WriteString(fmt.Sprintf(" @priority:%d", task.Priority))
+	sb.WriteString(footerRule + "\n")
+	for _, line := range formatFooter(task) {
+		sb.WriteString(line)
+		sb.WriteString("\n")
 	}
 
-	if task.Order > 0 {
-		sb.WriteString(fmt.Sprintf(" @order:%d", task.Order))
-	}
-
-	if task.Marked {
-		sb.WriteString(" @marked")
-	}
-
-	for _, tag := range task.Tags {
-		sb.WriteString(fmt.Sprintf(" @%s", tag))
-	}
-	sb.WriteString("\n")
-
-	return os.WriteFile(task.FilePath, []byte(sb.String()), 0644)
+	return fsutil.WriteFileAtomic(task.FilePath, []byte(sb.String()), taskFileMode)
 }
 
 // LoadTasksFromDirectory reads every markdown file in dir as a task, except
@@ -303,6 +248,7 @@ func CopyTaskToDirectory(t *Task, dir string, status Status, sourceURL string) (
 		Marked:        t.Marked,
 		CheckboxDone:  t.CheckboxDone,
 		CheckboxTotal: t.CheckboxTotal,
+		ExtraMetadata: slices.Clone(t.ExtraMetadata),
 		CreatedAt:     now,
 		UpdatedAt:     now,
 		FilePath:      path,

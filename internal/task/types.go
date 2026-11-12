@@ -35,6 +35,17 @@ type Task struct {
 	ADOParentID     int
 	ADOWorkItemType string
 	ADOCommentCount int
+	// ExtraMetadata holds footer entries cmdban has no schema for (or whose
+	// value didn't fit the schema), in file order, so rewriting a task never
+	// drops metadata written by a newer cmdban or by hand.
+	ExtraMetadata []MetadataEntry
+}
+
+// MetadataEntry is one footer entry; an empty Value marks a bare flag such
+// as @marked.
+type MetadataEntry struct {
+	Key   string
+	Value string
 }
 
 type Board struct {
