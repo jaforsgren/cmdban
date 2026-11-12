@@ -403,27 +403,52 @@ func htmlizeText(s string) string {
 	return strings.ReplaceAll(escaped, "\n", "<br>\n")
 }
 
+// newWorkItemIterationPath uses the board's configured iteration, or the
+// team's default iteration for boards scoped by backlog or assignee.
+func newWorkItemIterationPath(client *Client, adoCfg *config.AzureDevOpsConfig) (string, error) {
+	if adoCfg.Iteration == "" {
+		return client.TeamDefaultIterationPath()
+	}
+	return resolveIterationPath(client, adoCfg.Iteration)
+}
+
+// CreateRemoteTask creates a work item in lane, assigned to the PAT owner
+// and placed in the team's area so it shows up on the team board.
 func CreateRemoteTask(adoCfg *config.AzureDevOpsConfig, pat string, title string, lane task.Status) (*task.Task, error) {
 	client := NewClient(adoCfg.Org, adoCfg.Project, adoCfg.Team, pat)
 
-	iterationPath, err := resolveIterationPath(client, adoCfg.Iteration)
+	iterationPath, err := newWorkItemIterationPath(client, adoCfg)
 	if err != nil {
 		return nil, fmt.Errorf("resolving iteration: %w", err)
+	}
+	areaPath, err := client.TeamDefaultAreaPath()
+	if err != nil {
+		return nil, fmt.Errorf("resolving team area path: %w", err)
+	}
+	assignee, err := client.CurrentUserUniqueName()
+	if err != nil {
+		return nil, fmt.Errorf("resolving current user: %w", err)
 	}
 
 	workItemType := adoCfg.DefaultWorkItemType
 	if workItemType == "" {
 		workItemType = workItemTypeUserStory
 	}
-
 	placement, err := placementForLane(adoCfg, lane, workItemType)
 	if err != nil {
 		return nil, err
 	}
-	item, err := client.CreateWorkItem(workItemType, title, iterationPath, placement)
-	if err != nil {
-		return nil, err
-	}
 
+	item, err := client.CreateWorkItem(NewWorkItem{
+		Type:          workItemType,
+		Title:         title,
+		IterationPath: iterationPath,
+		AreaPath:      areaPath,
+		AssignedTo:    assignee,
+		Placement:     placement,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("creating work item: %w", err)
+	}
 	return workItemToTask(*item, adoCfg), nil
 }

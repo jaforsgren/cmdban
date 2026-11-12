@@ -107,6 +107,12 @@ type taskSavedMsg struct {
 
 type adoStateUpdatedMsg struct{}
 
+// adoMoveFailedMsg reports a rejected lane move; the board is reloaded so the
+// card snaps back to where ADO actually has it.
+type adoMoveFailedMsg struct {
+	err error
+}
+
 type errMsg struct {
 	err error
 }
@@ -224,6 +230,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case adoStateUpdatedMsg:
 		return m, nil
+
+	case adoMoveFailedMsg:
+		m.message = "Move failed: " + msg.err.Error()
+		m.logs.Error(m.message)
+		return m, m.loadTasks
 
 	case adoOrgsDiscoveredMsg:
 		return m.handleADOOrgsDiscovered(msg.orgs)
@@ -1275,9 +1286,10 @@ func (m Model) handleSettingsCommand(value string) (tea.Model, tea.Cmd) {
 
 func (m Model) createTask(title string) (tea.Model, tea.Cmd) {
 	m.mode = ModeNormal
-	lane := m.board.Lanes[m.activeLane]
+	lane := m.newTaskLane()
 
 	if m.config.IsADOBoard() {
+		m.message = "Creating work item..."
 		return m, m.createADOTask(title, lane)
 	}
 
@@ -1292,6 +1304,16 @@ func (m Model) createTask(title string) (tea.Model, tea.Cmd) {
 		}
 		return taskSavedMsg{t}
 	}
+}
+
+// newTaskLane is where a new task lands: the active lane on local boards, and
+// always the board's first (incoming) column on ADO boards, mirroring how
+// new work items start in New / ToDo.
+func (m Model) newTaskLane() task.Status {
+	if m.config.IsADOBoard() {
+		return m.board.AllColumns[0]
+	}
+	return m.board.Lanes[m.activeLane]
 }
 
 func (m Model) createADOTask(title string, lane task.Status) tea.Cmd {
@@ -1748,10 +1770,24 @@ func (m Model) pushADOStateChange(t *task.Task, newLane task.Status) tea.Cmd {
 			return errMsg{fmt.Errorf("PAT %q not found — run :pats to add it", adoCfg.PAT)}
 		}
 		if err := azuredevops.PushStateChange(adoCfg, token, snapshot, newLane); err != nil {
-			return errMsg{err}
+			return adoMoveFailedMsg{err}
 		}
 		return adoStateUpdatedMsg{}
 	}
+}
+
+// doneToggleTarget returns the lane toggling done moves t to. ADO boards use
+// their last (outgoing) and first (incoming) columns, since they don't have
+// the local today/done lanes.
+func (m Model) doneToggleTarget(t *task.Task) task.Status {
+	doneLane, openLane := task.StatusDone, task.StatusToday
+	if m.config.IsADOBoard() {
+		doneLane, openLane = m.board.AllColumns[len(m.board.AllColumns)-1], m.board.AllColumns[0]
+	}
+	if t.Status == doneLane {
+		return openLane
+	}
+	return doneLane
 }
 
 func (m Model) toggleTaskDone() (tea.Model, tea.Cmd) {
@@ -1760,12 +1796,7 @@ func (m Model) toggleTaskDone() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	var newStatus task.Status
-	if t.Status == task.StatusDone {
-		newStatus = task.StatusToday
-	} else {
-		newStatus = task.StatusDone
-	}
+	newStatus := m.doneToggleTarget(t)
 
 	m.board.MoveTask(t, newStatus)
 

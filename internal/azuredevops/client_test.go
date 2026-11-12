@@ -209,3 +209,57 @@ func TestClientPostSendsAddCommentPayload(t *testing.T) {
 		t.Fatalf("payload text = %q, want %q", body["text"], "**done**")
 	}
 }
+
+func TestProjectRelativePathPrefixesProject(t *testing.T) {
+	got := projectRelativePath("common", `\Sejfa Internal\Continuous`)
+
+	if want := `common\Sejfa Internal\Continuous`; got != want {
+		t.Fatalf("projectRelativePath() = %q, want %q", got, want)
+	}
+}
+
+func TestTeamDefaultsAndConnectionDataUnmarshal(t *testing.T) {
+	var settings TeamSettings
+	if err := json.Unmarshal([]byte(`{"defaultIteration":{"name":"Continuous","path":"\\Team\\Continuous"}}`), &settings); err != nil {
+		t.Fatalf("unmarshal TeamSettings: %v", err)
+	}
+	if settings.DefaultIteration.Path != `\Team\Continuous` {
+		t.Fatalf("DefaultIteration.Path = %q", settings.DefaultIteration.Path)
+	}
+
+	var data ConnectionData
+	raw := `{"authenticatedUser":{"properties":{"Account":{"$type":"System.String","$value":"me@example.com"}}}}`
+	if err := json.Unmarshal([]byte(raw), &data); err != nil {
+		t.Fatalf("unmarshal ConnectionData: %v", err)
+	}
+	if got := data.AuthenticatedUser.Properties.Account.Value; got != "me@example.com" {
+		t.Fatalf("account = %q, want %q", got, "me@example.com")
+	}
+}
+
+func TestNewWorkItemPatchOperationsAssignAndPlace(t *testing.T) {
+	ops := NewWorkItem{
+		Type:          "User Story",
+		Title:         "New story",
+		IterationPath: `proj\Continuous`,
+		AreaPath:      `proj\Team`,
+		AssignedTo:    "me@example.com",
+		Placement:     Placement{State: "New", ColumnField: "WEF_X_Kanban.Column", Column: "ToDo"},
+	}.patchOperations()
+
+	got := map[string]any{}
+	for _, op := range ops {
+		got[op.Path] = op.Value
+	}
+	want := map[string]any{
+		"/fields/System.Title":         "New story",
+		"/fields/System.IterationPath": `proj\Continuous`,
+		"/fields/System.AreaPath":      `proj\Team`,
+		"/fields/System.AssignedTo":    "me@example.com",
+		"/fields/System.State":         "New",
+		"/fields/WEF_X_Kanban.Column":  "ToDo",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("patchOperations() = %v, want %v", got, want)
+	}
+}

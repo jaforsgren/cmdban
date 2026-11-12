@@ -250,3 +250,59 @@ func TestSwitchBoardMovesBoardToFrontOfRecent(t *testing.T) {
 		t.Fatalf("RecentBoards = %v, want %v", m.config.RecentBoards, want)
 	}
 }
+
+func TestNewTaskLaneOnADOBoardIsFirstColumn(t *testing.T) {
+	m := adoTestModel(adoTestConfig())
+	m.activeLane = 1
+
+	if got := m.newTaskLane(); got != "todo" {
+		t.Fatalf("newTaskLane() = %q, want %q", got, "todo")
+	}
+}
+
+func TestNewTaskLaneOnLocalBoardIsActiveLane(t *testing.T) {
+	m := NewModel(&config.Config{})
+	m.activeLane = 1
+
+	if got := m.newTaskLane(); got != m.board.Lanes[1] {
+		t.Fatalf("newTaskLane() = %q, want active lane %q", got, m.board.Lanes[1])
+	}
+}
+
+func TestDoneToggleTargetOnADOBoardUsesOuterColumns(t *testing.T) {
+	m := adoTestModel(adoTestConfig())
+
+	if got := m.doneToggleTarget(&task.Task{Status: "todo"}); got != "review" {
+		t.Fatalf("doneToggleTarget(todo) = %q, want last column %q", got, "review")
+	}
+	if got := m.doneToggleTarget(&task.Task{Status: "review"}); got != "todo" {
+		t.Fatalf("doneToggleTarget(review) = %q, want first column %q", got, "todo")
+	}
+}
+
+func TestADOMoveFailureReportsAndReloads(t *testing.T) {
+	m := adoTestModel(adoTestConfig())
+
+	got, cmd := m.Update(adoMoveFailedMsg{err: errBoom})
+
+	if cmd == nil {
+		t.Fatal("move failure returned no command, want a reload")
+	}
+	if msg := got.(Model).message; !strings.Contains(msg, "boom") {
+		t.Fatalf("message = %q, want the failure reason", msg)
+	}
+}
+
+func TestMovingADOTaskRightMovesLocallyAndPushes(t *testing.T) {
+	m := adoTestModel(adoTestConfig())
+
+	got, cmd := m.Update(keyMsgFor("L"))
+	m = got.(Model)
+
+	if cmd == nil {
+		t.Fatal("moving an ADO task returned no command, want the change pushed")
+	}
+	if m.board.Lanes[m.activeLane] != "review" || m.selectedTask() == nil {
+		t.Fatalf("active lane = %q, want the task followed into %q", m.board.Lanes[m.activeLane], "review")
+	}
+}

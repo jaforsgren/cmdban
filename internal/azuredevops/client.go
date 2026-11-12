@@ -323,16 +323,11 @@ func (c *Client) UpdateWorkItemTitleAndDescription(id int, title, description st
 	return c.patchJSON(url, "application/json-patch+json", ops, nil)
 }
 
-func (c *Client) CreateWorkItem(workItemType, title, iterationPath string, placement Placement) (*WorkItem, error) {
-	createURL := fmt.Sprintf("%s/_apis/wit/workitems/$%s?api-version=%s", c.baseURL(), url.PathEscape(workItemType), apiVersion)
-
-	ops := append([]PatchOperation{
-		{Op: "add", Path: "/fields/System.Title", Value: title},
-		{Op: "add", Path: "/fields/System.IterationPath", Value: iterationPath},
-	}, placement.patchOperations()...)
+func (c *Client) CreateWorkItem(newItem NewWorkItem) (*WorkItem, error) {
+	createURL := fmt.Sprintf("%s/_apis/wit/workitems/$%s?api-version=%s", c.baseURL(), url.PathEscape(newItem.Type), apiVersion)
 
 	var item WorkItem
-	if err := c.patchJSON(createURL, "application/json-patch+json", ops, &item); err != nil {
+	if err := c.patchJSON(createURL, "application/json-patch+json", newItem.patchOperations(), &item); err != nil {
 		return nil, err
 	}
 	return &item, nil
@@ -349,6 +344,55 @@ func (c *Client) addCommentURL(workItemID int) string {
 // AddComment posts a markdown comment to a work item.
 func (c *Client) AddComment(workItemID int, text string) error {
 	return c.post(c.addCommentURL(workItemID), addCommentRequest{Text: text}, nil)
+}
+
+// TeamDefaultIterationPath returns the full work item iteration path of the
+// team's default iteration, used when a board has no iteration configured.
+func (c *Client) TeamDefaultIterationPath() (string, error) {
+	settingsURL := fmt.Sprintf("%s/_apis/work/teamsettings?api-version=%s", c.teamURL(), apiVersion)
+	var settings TeamSettings
+	if err := c.get(settingsURL, &settings); err != nil {
+		return "", err
+	}
+	if settings.DefaultIteration.Path == "" {
+		return "", fmt.Errorf("team %q has no default iteration", c.team)
+	}
+	return projectRelativePath(c.project, settings.DefaultIteration.Path), nil
+}
+
+// projectRelativePath prefixes a team-settings classification path, which
+// omits the project, with the project name as work item fields expect.
+func projectRelativePath(project, path string) string {
+	return project + `\` + strings.TrimPrefix(path, `\`)
+}
+
+// TeamDefaultAreaPath returns the area path new work items need to appear on
+// the team's boards.
+func (c *Client) TeamDefaultAreaPath() (string, error) {
+	areaURL := fmt.Sprintf("%s/_apis/work/teamsettings/teamfieldvalues?api-version=%s", c.teamURL(), apiVersion)
+	var values TeamFieldValues
+	if err := c.get(areaURL, &values); err != nil {
+		return "", err
+	}
+	if values.DefaultValue == "" {
+		return "", fmt.Errorf("team %q has no default area path", c.team)
+	}
+	return values.DefaultValue, nil
+}
+
+// CurrentUserUniqueName returns the PAT owner's account name, the value
+// System.AssignedTo accepts to assign a work item to them.
+func (c *Client) CurrentUserUniqueName() (string, error) {
+	connectionURL := fmt.Sprintf("https://dev.azure.com/%s/_apis/connectionData", url.PathEscape(c.org))
+	var data ConnectionData
+	if err := c.get(connectionURL, &data); err != nil {
+		return "", err
+	}
+	name := data.AuthenticatedUser.Properties.Account.Value
+	if name == "" {
+		return "", fmt.Errorf("could not resolve the current user's account name")
+	}
+	return name, nil
 }
 
 // FetchComments returns a work item's comments, oldest first, with HTML

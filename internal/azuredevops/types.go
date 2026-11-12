@@ -75,6 +75,46 @@ type IterationListResponse struct {
 	Value []Iteration `json:"value"`
 }
 
+// TeamSettings holds the team's default iteration, whose path is relative to
+// the project (e.g. `\Team\Continuous`).
+type TeamSettings struct {
+	DefaultIteration Iteration `json:"defaultIteration"`
+}
+
+type TeamFieldValues struct {
+	DefaultValue string `json:"defaultValue"`
+}
+
+type ConnectionData struct {
+	AuthenticatedUser struct {
+		Properties struct {
+			Account struct {
+				Value string `json:"$value"`
+			} `json:"Account"`
+		} `json:"properties"`
+	} `json:"authenticatedUser"`
+}
+
+// NewWorkItem is everything set on a work item created from cmdban.
+type NewWorkItem struct {
+	Type          string
+	Title         string
+	IterationPath string
+	AreaPath      string
+	AssignedTo    string
+	Placement     Placement
+}
+
+func (w NewWorkItem) patchOperations() []PatchOperation {
+	ops := []PatchOperation{
+		{Op: "add", Path: "/fields/System.Title", Value: w.Title},
+		{Op: "add", Path: "/fields/System.IterationPath", Value: w.IterationPath},
+		{Op: "add", Path: "/fields/System.AreaPath", Value: w.AreaPath},
+		{Op: "add", Path: "/fields/System.AssignedTo", Value: w.AssignedTo},
+	}
+	return append(ops, w.Placement.patchOperations()...)
+}
+
 type PatchOperation struct {
 	Op    string `json:"op"`
 	Path  string `json:"path"`
