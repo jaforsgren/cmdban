@@ -14,6 +14,7 @@ cmdban connects directly to Azure DevOps sprint backlogs. Work items appear as K
 | Create bug `b` | Same as `a`, but creates a `Bug` |
 | Toggle done `d` | Asks for confirmation, then moves the work item to the last column, or back to the first |
 | Edit title `e` | PATCH `System.Title` in ADO |
+| Edit in `$EDITOR` `ctrl+g` | Opens title and description as markdown; on save the description is converted back to HTML (paragraphs, headings, lists, code blocks, bold/italic, links) so its formatting is kept |
 | Refresh `r` | Re-fetches entire sprint |
 | `:adocolumns [board]` | Re-reads the Kanban board columns and rebuilds the lanes |
 | Toggle lanes `v` | Switches between Kanban column lanes (default) and one lane per work item state; moving a card in state lanes sets only `System.State` |

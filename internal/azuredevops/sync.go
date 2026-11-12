@@ -2,7 +2,6 @@ package azuredevops
 
 import (
 	"fmt"
-	"html"
 	"net/url"
 	"strings"
 	"time"
@@ -402,23 +401,18 @@ func UpdateRemoteTitle(adoCfg *config.AzureDevOpsConfig, pat string, t *task.Tas
 	return nil
 }
 
-// UpdateRemoteTitleAndDescription pushes an edited title and plain-text
-// description back to the work item, htmlizing the description since ADO
-// stores it as HTML (the inverse of htmlToMarkdown on the read side, minus formatting).
+// UpdateRemoteTitleAndDescription pushes an edited title and markdown
+// description back to the work item, converting the description to the HTML
+// ADO stores (the inverse of htmlToMarkdown on the read side).
 func UpdateRemoteTitleAndDescription(adoCfg *config.AzureDevOpsConfig, pat string, t *task.Task, title, description string) error {
 	if t.ADOItemID == 0 {
 		return fmt.Errorf("task %q has no ADO item ID", t.ID)
 	}
 	client := NewClient(adoCfg.Org, adoCfg.Project, adoCfg.Team, pat)
-	if err := client.UpdateWorkItemTitleAndDescription(t.ADOItemID, title, htmlizeText(description)); err != nil {
+	if err := client.UpdateWorkItemTitleAndDescription(t.ADOItemID, title, markdownToHTML(description)); err != nil {
 		return fmt.Errorf("updating work item %d title and description: %w", t.ADOItemID, err)
 	}
 	return nil
-}
-
-func htmlizeText(s string) string {
-	escaped := html.EscapeString(s)
-	return strings.ReplaceAll(escaped, "\n", "<br>\n")
 }
 
 // DefaultWorkItemType is the type created by a plain new task, User Story
