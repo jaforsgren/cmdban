@@ -12,6 +12,8 @@ cmdban connects directly to Azure DevOps sprint backlogs. Work items appear as K
 | Edit title `e` | PATCH `System.Title` in ADO |
 | Refresh `r` | Re-fetches entire sprint |
 | `:adocolumns [board]` | Re-reads the Kanban board columns and rebuilds the lanes |
+| Toggle lanes `v` | Switches between Kanban column lanes (default) and one lane per work item state; moving a card in state lanes sets only `System.State` |
+| Type filter `0`–`9` | Shows one work item type; `0` shows all |
 | Delete, tags, reorder | Blocked — manage in ADO web UI |
 
 ---

@@ -11,11 +11,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 
 	"cmdban/internal/applog"
 	"cmdban/internal/azuredevops"
@@ -23,6 +23,13 @@ import (
 	"cmdban/internal/markdown"
 	"cmdban/internal/pat"
 	"cmdban/internal/task"
+)
+
+const (
+	minBodyHeight        = 5
+	laneBorderRows       = 2
+	detailPaneChromeRows = 6 // dialog border, padding and footer hint
+	footerPaddingCols    = 2
 )
 
 var urlRegex = regexp.MustCompile(`https?://[^\s)\]]+`)
@@ -53,7 +60,6 @@ type Model struct {
 	config             *config.Config
 	patStore           *pat.Store
 	keys               KeyMap
-	help               help.Model
 	textInput          textinput.Model
 	mdRenderer         *markdown.Renderer
 	width              int
@@ -69,6 +75,7 @@ type Model struct {
 	tagSuggestions     []string
 	tagSuggestion      string
 	searchFilter       string
+	typeFilter         string
 	boardSelectorIndex int
 	moveBoardIndex     int
 	pendingBoardName   string
@@ -129,9 +136,6 @@ func NewModel(cfg *config.Config) Model {
 	ti.CharLimit = 256
 	ti.Width = 50
 
-	h := help.New()
-	h.ShowAll = false
-
 	mdStyles := markdown.DefaultStyles()
 	mdRenderer := markdown.NewRenderer(mdStyles)
 
@@ -145,7 +149,6 @@ func NewModel(cfg *config.Config) Model {
 		config:           cfg,
 		patStore:         patStore,
 		keys:             DefaultKeyMap,
-		help:             h,
 		textInput:        ti,
 		mdRenderer:       mdRenderer,
 		activeLane:       0,
@@ -197,7 +200,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		m.help.Width = msg.Width
 		return m, nil
 
 	case tasksLoadedMsg:
@@ -292,10 +294,7 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	if m.mode == ModeHelp {
-		if key.Matches(msg, m.keys.Help) || key.Matches(msg, m.keys.Escape) || msg.String() == "q" {
-			m.mode = ModeNormal
-		}
-		return m, nil
+		return m.handleHelpMode(msg)
 	}
 
 	if m.mode == ModeView {
@@ -347,16 +346,15 @@ func (m Model) handleNormalMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 
 	case key.Matches(msg, m.keys.Escape):
-		if m.searchFilter != "" {
+		if m.hasActiveFilter() {
 			m.searchFilter = ""
+			m.typeFilter = ""
 			m.clampSelection()
 			return m, nil
 		}
 
 	case key.Matches(msg, m.keys.Help):
-		m.mode = ModeHelp
-		m.help.ShowAll = true
-		return m, nil
+		return m.openHelp()
 
 	case key.Matches(msg, m.keys.Up):
 		m.activeTask--
@@ -512,6 +510,10 @@ func (m Model) handleNormalMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.gPressed = false
 		return m, nil
 
+	case key.Matches(msg, m.keys.NextRecentBoard):
+		m.gPressed = false
+		return m.cycleRecentBoard()
+
 	case key.Matches(msg, m.keys.MoveToBoard):
 		m.gPressed = false
 		return m.startMoveBoard()
@@ -543,6 +545,14 @@ func (m Model) handleNormalMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.Comments):
 		m.gPressed = false
 		return m.openComments()
+
+	case key.Matches(msg, m.keys.TypeFilter):
+		m.gPressed = false
+		return m.selectTypeFilter(msg.String())
+
+	case key.Matches(msg, m.keys.ToggleLanes):
+		m.gPressed = false
+		return m.toggleLaneMode()
 
 	default:
 		m.gPressed = false
@@ -1073,12 +1083,15 @@ func (m Model) handlePATManagerMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) filterTasks(tasks []*task.Task) []*task.Task {
-	if m.searchFilter == "" {
+	if !m.hasActiveFilter() {
 		return tasks
 	}
 	filter := strings.ToLower(m.searchFilter)
 	var filtered []*task.Task
 	for _, t := range tasks {
+		if !m.matchesTypeFilter(t) {
+			continue
+		}
 		if strings.Contains(strings.ToLower(t.Title), filter) {
 			filtered = append(filtered, t)
 			continue
@@ -1190,9 +1203,7 @@ func (m Model) handleCommand(cmd string) (tea.Model, tea.Cmd) {
 		m.message = "Tasks auto-saved to markdown files"
 
 	case "help", "h":
-		m.mode = ModeHelp
-		m.help.ShowAll = true
-		return m, nil
+		return m.openHelp()
 
 	case "config", "conf", "c":
 		m.mode = ModeNormal
@@ -1829,7 +1840,7 @@ func (m Model) reorderTask(delta int) (tea.Model, tea.Cmd) {
 	tasks[idx], tasks[newIdx] = tasks[newIdx], tasks[idx]
 	m.board.Tasks[lane] = tasks
 
-	if m.searchFilter == "" {
+	if !m.hasActiveFilter() {
 		m.activeTask = newIdx
 	}
 
@@ -1906,78 +1917,12 @@ func (m Model) View() string {
 		return "Loading..."
 	}
 
-	var sections []string
-
-	sections = append(sections, m.renderHeader())
-	sections = append(sections, m.renderBoard())
-	sections = append(sections, m.renderFooter())
-
-	return lipgloss.JoinVertical(lipgloss.Left, sections...)
+	return lipgloss.JoinVertical(lipgloss.Left, m.renderTopBar(), m.renderBoard(), m.renderFooter())
 }
 
-func (m Model) renderHeader() string {
-	title := TitleStyle.Render("╭─ KANBAN ─╮")
-
-	var modeStr string
-	switch m.mode {
-	case ModeInput:
-		modeStr = "[INSERT]"
-	case ModeCommand:
-		modeStr = "[COMMAND]"
-	case ModeConfirm:
-		modeStr = "[CONFIRM]"
-	case ModeHelp:
-		modeStr = "[HELP]"
-	case ModeView:
-		modeStr = "[VIEW]"
-	case ModeTag:
-		modeStr = "[TAG]"
-	case ModeSearch:
-		modeStr = "[SEARCH]"
-	case ModeBoardSelector:
-		modeStr = "[BOARDS]"
-	case ModePATManager:
-		modeStr = "[PATS]"
-	case ModeADOSetup:
-		modeStr = "[ADO SETUP]"
-	case ModeLogs:
-		modeStr = "[LOGS]"
-	case ModeComments:
-		modeStr = "[COMMENTS]"
-	case ModeFocus:
-		modeStr = "[FOCUS]"
-	case ModeMoveBoard:
-		modeStr = "[MOVE]"
-	default:
-		modeStr = "[NORMAL]"
-	}
-
-	mode := lipgloss.NewStyle().
-		Foreground(HighlightColor).
-		Bold(true).
-		Render(modeStr)
-
-	boardName := ""
-	if board := m.config.ActiveBoard(); board != nil {
-		name := board.Name
-		if board.Type == config.BoardTypeAzureDevOps {
-			name += " [ADO]"
-		}
-		boardName = lipgloss.NewStyle().Foreground(HighlightColor).Render(" [" + name + "]")
-	}
-
-	var statusPart string
-	if m.config.IsADOBoard() {
-		if !m.lastSyncTime.IsZero() {
-			elapsed := time.Since(m.lastSyncTime).Round(time.Second)
-			statusPart = lipgloss.NewStyle().Foreground(SubtleColor).Render(fmt.Sprintf("  synced %s ago", elapsed))
-		}
-	} else {
-		statusPart = StatusBarStyle.Render("📁 " + m.config.TaskDirectory())
-	}
-
-	header := lipgloss.JoinHorizontal(lipgloss.Center, title, boardName, "  ", mode, statusPart)
-	return header
+// bodyHeight is the number of rows left between the top bar and the footer.
+func (m Model) bodyHeight() int {
+	return max(m.height-topBarHeight-lipgloss.Height(m.renderFooter()), minBodyHeight)
 }
 
 func (m Model) renderBoard() string {
@@ -2087,11 +2032,7 @@ func (m Model) renderLane(index int, status task.Status, width int, minimized bo
 	statusName := strings.ToUpper(string(status))
 	count := len(tasks)
 
-	// 2 for lane border (top+bottom), 2 for app header+footer (conservative)
-	availableHeight := m.height - 4
-	if availableHeight < 5 {
-		availableHeight = 5
-	}
+	availableHeight := max(m.bodyHeight()-laneBorderRows, minBodyHeight)
 
 	if minimized {
 		header := headerStyle.Width(width - 4).Render(statusName)
@@ -2377,27 +2318,9 @@ func (m Model) renderFooter() string {
 		return DialogStyle.Render("Delete task? (y/n)")
 	}
 
-	var parts []string
-
-	if m.searchFilter != "" {
-		filterMsg := lipgloss.NewStyle().
-			Foreground(HighlightColor).
-			Render("Filter: /" + m.searchFilter + "  (ESC to clear)")
-		parts = append(parts, filterMsg)
-	}
-
-	if m.message != "" {
-		msgWidth := m.width - 4
-		if msgWidth < 20 {
-			msgWidth = 20
-		}
-		parts = append(parts, StatusBarStyle.Foreground(WarningColor).Width(msgWidth).Render(m.message))
-	}
-
-	helpView := m.help.View(m.keys)
-	parts = append(parts, HelpStyle.Render(helpView))
-
-	return lipgloss.JoinVertical(lipgloss.Left, parts...)
+	// Truncated rather than wrapped so the footer stays one row tall.
+	message := ansi.Truncate(m.message, max(m.width-footerPaddingCols, 0), "…")
+	return StatusBarStyle.Foreground(WarningColor).Render(message)
 }
 
 const defaultDetailFooterHint = "[q: back, j/k: scroll, ctrl+g: edit in nvim, ctrl+o: open url, ctrl+c: comments]"
@@ -2431,7 +2354,7 @@ func (m Model) renderTaskDetailPane(width int, footerHint, adoFooterHint string)
 	rendered := m.mdRenderer.Render(string(content))
 
 	lines := strings.Split(rendered, "\n")
-	availableHeight := m.height - 8
+	availableHeight := m.bodyHeight() - detailPaneChromeRows
 
 	if m.viewScroll >= len(lines) {
 		m.viewScroll = len(lines) - 1
@@ -2484,7 +2407,7 @@ func (m Model) renderTaskDetailPane(width int, footerHint, adoFooterHint string)
 }
 
 func (m Model) renderADOTaskDetailPane(t *task.Task, width int, footerHint string) string {
-	availableHeight := m.height - 8
+	availableHeight := m.bodyHeight() - detailPaneChromeRows
 
 	heading := lipgloss.NewStyle().Bold(true).Foreground(HighlightColor).
 		Render(fmt.Sprintf("#%d  %s", t.ADOItemID, t.Title))
@@ -2572,36 +2495,6 @@ func (m Model) renderFocusView() string {
 	return lipgloss.JoinHorizontal(lipgloss.Top, readPane, listPane)
 }
 
-func (m Model) renderHelp() string {
-	help := `
-  NAVIGATION                    ACTIONS
-  ──────────                    ───────
-  h/←      left lane            a       new task
-  l/→      right lane           e/i     edit task
-  j/↓      down                 d       toggle done
-  k/↑      up                   ctrl+d  delete task
-  gg       top of lane          t       add tag
-  G        bottom of lane       m       mark task
-  ctrl+u   half page up         H/shift+← move task left
-  ctrl+f   half page down       L/shift+→ move task right
-                                enter   view task
-
-  MISC                          COMMANDS
-  ────                          ────────
-  ?        toggle help          :       command mode
-  r        refresh              :q      quit
-  q        quit                 :b      board switcher
-  ctrl+b   board switcher       :move   move task to board
-  ctrl+m   move task to board   :pats   PAT manager
-                                :logs   error/log viewer
-                                :clear  archive all in lane
-                                :adocolumns [board]  sync ADO columns
-
-  Press ? or ESC to close help
-`
-	return DialogStyle.Width(60).Render(help)
-}
-
 func (m Model) activeBoardIndex() int {
 	for i, b := range m.config.Boards {
 		if b.Name == m.config.CurrentBoard {
@@ -2659,7 +2552,24 @@ func (m Model) createBoard(name, directory string) (tea.Model, tea.Cmd) {
 	return m.switchBoard(name)
 }
 
+// switchBoard activates name and moves it to the front of the recent list.
 func (m Model) switchBoard(name string) (tea.Model, tea.Cmd) {
+	m.config.TouchRecentBoard(name)
+	return m.activateBoard(name)
+}
+
+// cycleRecentBoard activates the next board in the recent list without
+// reordering it, so repeated ctrl+n walks the whole list.
+func (m Model) cycleRecentBoard() (tea.Model, tea.Cmd) {
+	next := m.config.NextRecentBoard()
+	if next == "" {
+		m.message = "No other recent boards"
+		return m, nil
+	}
+	return m.activateBoard(next)
+}
+
+func (m Model) activateBoard(name string) (tea.Model, tea.Cmd) {
 	m.config.CurrentBoard = name
 	if err := m.config.Save(); err != nil {
 		m.message = "Error saving config: " + err.Error()
@@ -2673,6 +2583,7 @@ func (m Model) switchBoard(name string) (tea.Model, tea.Cmd) {
 	m.mode = ModeNormal
 	m.lastSyncTime = time.Time{}
 	m.minimizedLanes = make(map[task.Status]bool)
+	m.typeFilter = ""
 	m.message = "Switched to board: " + name
 	if m.config.IsADOBoard() {
 		m.message = "Switched to board: " + name + " — syncing..."

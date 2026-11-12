@@ -13,11 +13,6 @@ var (
 )
 
 var (
-	TitleStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(HighlightColor).
-			MarginBottom(1)
-
 	LaneHeaderStyle = lipgloss.NewStyle().
 			Bold(true).
 			Padding(0, 1).
@@ -52,10 +47,6 @@ var (
 
 	ActiveLaneStyle = LaneStyle.
 			BorderForeground(ActiveColor)
-
-	HelpStyle = lipgloss.NewStyle().
-			Foreground(SubtleColor).
-			MarginTop(1)
 
 	StatusBarStyle = lipgloss.NewStyle().
 			Foreground(SubtleColor).

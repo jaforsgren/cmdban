@@ -257,3 +257,42 @@ func TestPlacementPatchOperations(t *testing.T) {
 		t.Fatalf("board patchOperations() = %+v, want state plus column op", withColumn)
 	}
 }
+
+func stateLanesConfig() *config.AzureDevOpsConfig {
+	cfg := boardColumnsConfig()
+	cfg.LaneMode = config.LaneModeStates
+	return cfg
+}
+
+func TestLaneForWorkItemInStateModeUsesState(t *testing.T) {
+	got := laneForWorkItem(stateLanesConfig(), WorkItemFields{WorkItemType: "Bug", State: "Active", BoardColumn: "Review"})
+
+	if got != "active" {
+		t.Fatalf("laneForWorkItem() = %q, want %q", got, "active")
+	}
+}
+
+func TestLaneForWorkItemInStateModeFallsBackToFirstLane(t *testing.T) {
+	got := laneForWorkItem(stateLanesConfig(), WorkItemFields{WorkItemType: "Task", State: "Done"})
+
+	if got != "new" {
+		t.Fatalf("laneForWorkItem() = %q, want %q", got, "new")
+	}
+}
+
+func TestPlacementForLaneInStateModeSetsStateOnly(t *testing.T) {
+	got, err := placementForLane(stateLanesConfig(), "resolved", "Task")
+	if err != nil {
+		t.Fatalf("placementForLane() error = %v", err)
+	}
+
+	if got != (Placement{State: "Resolved"}) {
+		t.Fatalf("placementForLane() = %+v, want state-only Resolved", got)
+	}
+}
+
+func TestPlacementForLaneInStateModeRejectsUnknownLane(t *testing.T) {
+	if _, err := placementForLane(stateLanesConfig(), "review", "Bug"); err == nil {
+		t.Fatal("placementForLane() error = nil, want an error for a column lane in state mode")
+	}
+}

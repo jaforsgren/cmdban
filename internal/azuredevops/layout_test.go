@@ -98,17 +98,3 @@ func TestUniqueLaneSlugsSuffixesDuplicates(t *testing.T) {
 		t.Fatalf("uniqueLaneSlugs() = %v, want %v", got, want)
 	}
 }
-
-func TestSlugify(t *testing.T) {
-	tests := map[string]string{
-		"Waiting for build": "waiting-for-build",
-		"In  Progress!":     "in-progress",
-		"--ToDo--":          "todo",
-		"QA / Test 2":       "qa-test-2",
-	}
-	for in, want := range tests {
-		if got := slugify(in); got != want {
-			t.Errorf("slugify(%q) = %q, want %q", in, got, want)
-		}
-	}
-}

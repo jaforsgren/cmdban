@@ -2,7 +2,6 @@ package azuredevops
 
 import (
 	"fmt"
-	"strings"
 
 	"cmdban/internal/config"
 )
@@ -41,7 +40,7 @@ func uniqueLaneSlugs(boardColumns []BoardColumn) []string {
 	slugCounts := map[string]int{}
 	slugs := make([]string, len(boardColumns))
 	for i, bc := range boardColumns {
-		slugs[i] = slugify(bc.Name)
+		slugs[i] = config.LaneSlug(bc.Name)
 		slugCounts[slugs[i]]++
 	}
 
@@ -53,19 +52,4 @@ func uniqueLaneSlugs(boardColumns []BoardColumn) []string {
 		}
 	}
 	return slugs
-}
-
-func slugify(s string) string {
-	var b strings.Builder
-	lastWasDash := false
-	for _, r := range strings.ToLower(s) {
-		if r >= 'a' && r <= 'z' || r >= '0' && r <= '9' {
-			b.WriteRune(r)
-			lastWasDash = false
-		} else if b.Len() > 0 && !lastWasDash {
-			b.WriteRune('-')
-			lastWasDash = true
-		}
-	}
-	return strings.TrimRight(b.String(), "-")
 }

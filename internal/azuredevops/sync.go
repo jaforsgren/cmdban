@@ -52,11 +52,29 @@ func laneForBoardColumn(cfg *config.AzureDevOpsConfig, f WorkItemFields) task.St
 	return task.Status(cfg.BoardColumns[0].Lane)
 }
 
-func laneForWorkItem(cfg *config.AzureDevOpsConfig, f WorkItemFields) task.Status {
-	if cfg.UsesBoardColumns() {
-		return laneForBoardColumn(cfg, f)
+// laneForStateLane resolves a work item's lane on a board toggled to state
+// lanes. States the board doesn't map (e.g. a Task's "Done") fall back to
+// the first lane.
+func laneForStateLane(cfg *config.AzureDevOpsConfig, state string) task.Status {
+	stateLanes := cfg.StateLanes()
+	lane := config.LaneSlug(state)
+	for _, sl := range stateLanes {
+		if sl.Lane == lane {
+			return task.Status(sl.Lane)
+		}
 	}
-	return laneForState(cfg, f.State)
+	return task.Status(stateLanes[0].Lane)
+}
+
+func laneForWorkItem(cfg *config.AzureDevOpsConfig, f WorkItemFields) task.Status {
+	switch {
+	case cfg.ShowsStateLanes():
+		return laneForStateLane(cfg, f.State)
+	case cfg.UsesBoardColumns():
+		return laneForBoardColumn(cfg, f)
+	default:
+		return laneForState(cfg, f.State)
+	}
 }
 
 // placementForLane returns the field values that move a work item of the
@@ -66,6 +84,9 @@ func laneForWorkItem(cfg *config.AzureDevOpsConfig, f WorkItemFields) task.Statu
 func placementForLane(cfg *config.AzureDevOpsConfig, lane task.Status, workItemType string) (Placement, error) {
 	if !cfg.UsesBoardColumns() {
 		return Placement{State: stateForLane(cfg, lane)}, nil
+	}
+	if cfg.ShowsStateLanes() {
+		return stateLanePlacement(cfg, lane)
 	}
 	for _, bc := range cfg.BoardColumns {
 		if bc.Lane != string(lane) {
@@ -78,6 +99,17 @@ func placementForLane(cfg *config.AzureDevOpsConfig, lane task.Status, workItemT
 		return Placement{State: state, ColumnField: cfg.BoardColumnField, Column: bc.Column}, nil
 	}
 	return Placement{}, fmt.Errorf("lane %q has no board column mapping", lane)
+}
+
+// stateLanePlacement sets only the state; ADO then drops the item into the
+// first Kanban column mapped to that state.
+func stateLanePlacement(cfg *config.AzureDevOpsConfig, lane task.Status) (Placement, error) {
+	for _, sl := range cfg.StateLanes() {
+		if sl.Lane == string(lane) {
+			return Placement{State: sl.State}, nil
+		}
+	}
+	return Placement{}, fmt.Errorf("lane %q has no state mapping", lane)
 }
 
 // resolveIterationPath converts a stored iteration value to the full ADO path

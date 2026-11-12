@@ -3,39 +3,42 @@ package ui
 import "github.com/charmbracelet/bubbles/key"
 
 type KeyMap struct {
-	Up         key.Binding
-	Down       key.Binding
-	Left       key.Binding
-	Right      key.Binding
-	Top        key.Binding
-	Bottom     key.Binding
-	HalfUp     key.Binding
-	HalfDown   key.Binding
-	MoveLeft   key.Binding
-	MoveRight  key.Binding
-	OrderUp    key.Binding
-	OrderDown  key.Binding
-	New        key.Binding
-	Edit       key.Binding
-	Delete     key.Binding
-	ToggleDone key.Binding
-	Mark       key.Binding
-	Enter      key.Binding
-	Escape     key.Binding
-	Settings   key.Binding
-	Help       key.Binding
-	Quit       key.Binding
-	Search     key.Binding
-	Filter     key.Binding
-	Refresh    key.Binding
-	OpenEditor key.Binding
-	OpenURL    key.Binding
-	Comments   key.Binding
-	Tag        key.Binding
-	Boards         key.Binding
-	CollapseColumn key.Binding
-	Focus          key.Binding
-	MoveToBoard    key.Binding
+	Up              key.Binding
+	Down            key.Binding
+	Left            key.Binding
+	Right           key.Binding
+	Top             key.Binding
+	Bottom          key.Binding
+	HalfUp          key.Binding
+	HalfDown        key.Binding
+	MoveLeft        key.Binding
+	MoveRight       key.Binding
+	OrderUp         key.Binding
+	OrderDown       key.Binding
+	New             key.Binding
+	Edit            key.Binding
+	Delete          key.Binding
+	ToggleDone      key.Binding
+	Mark            key.Binding
+	Enter           key.Binding
+	Escape          key.Binding
+	Settings        key.Binding
+	Help            key.Binding
+	Quit            key.Binding
+	Search          key.Binding
+	Filter          key.Binding
+	Refresh         key.Binding
+	OpenEditor      key.Binding
+	OpenURL         key.Binding
+	Comments        key.Binding
+	Tag             key.Binding
+	Boards          key.Binding
+	CollapseColumn  key.Binding
+	Focus           key.Binding
+	MoveToBoard     key.Binding
+	TypeFilter      key.Binding
+	ToggleLanes     key.Binding
+	NextRecentBoard key.Binding
 }
 
 var DefaultKeyMap = KeyMap{
@@ -171,20 +174,16 @@ var DefaultKeyMap = KeyMap{
 		key.WithKeys("ctrl+m"),
 		key.WithHelp("ctrl+m", "move task to board"),
 	),
-}
-
-func (k KeyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.Up, k.Down, k.Left, k.Right, k.New, k.ToggleDone, k.Help, k.Quit}
-}
-
-func (k KeyMap) FullHelp() [][]key.Binding {
-	return [][]key.Binding{
-		{k.Up, k.Down, k.Left, k.Right},
-		{k.Top, k.Bottom, k.HalfUp, k.HalfDown},
-		{k.MoveLeft, k.MoveRight, k.OrderUp, k.OrderDown},
-		{k.New, k.Edit, k.ToggleDone, k.Delete},
-		{k.Mark, k.Tag, k.Search, k.Filter, k.Refresh},
-		{k.Settings, k.Help, k.Quit, k.Boards, k.CollapseColumn, k.Focus, k.MoveToBoard},
-		{k.OpenEditor, k.OpenURL, k.Comments},
-	}
+	TypeFilter: key.NewBinding(
+		key.WithKeys("0", "1", "2", "3", "4", "5", "6", "7", "8", "9"),
+		key.WithHelp("0-9", "filter work item type"),
+	),
+	ToggleLanes: key.NewBinding(
+		key.WithKeys("v"),
+		key.WithHelp("v", "toggle column/state lanes"),
+	),
+	NextRecentBoard: key.NewBinding(
+		key.WithKeys("ctrl+n"),
+		key.WithHelp("ctrl+n", "next recent board"),
+	),
 }

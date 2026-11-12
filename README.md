@@ -96,7 +96,7 @@ boards:
 
 ## Boards
 
-Open the board switcher with `:b` or `ctrl+b`.
+Open the board switcher with `:b` or `ctrl+b`. The topbar's RECENT section lists the last four boards you used; `ctrl+n` cycles through them.
 
 | Key | Action |
 |-----|--------|
@@ -149,6 +149,16 @@ See **[docs/azure-devops.md](docs/azure-devops.md)** for full setup instructions
 | `m` | Mark task |
 | `/` | Search |
 | `r` | Refresh |
+| `ctrl+n` | Next recent board |
+
+### Azure DevOps boards
+
+| Key | Action |
+|-----|--------|
+| `0`–`9` | Filter by work item type (`0` = all, numbers listed in the topbar's TYPES section) |
+| `v` | Toggle lanes between Kanban board columns and work item states |
+| `ctrl+o` | Open work item in browser |
+| `ctrl+c` | View comments |
 
 ### Commands
 
@@ -159,8 +169,9 @@ See **[docs/azure-devops.md](docs/azure-devops.md)** for full setup instructions
 | `:pats` / `:p` | PAT manager |
 | `:config` / `:c` | Open config in editor |
 | `:set dir <path>` | Set task directory |
+| `:adocolumns [board]` | Sync lanes from an ADO Kanban board |
 | `:q` | Quit |
-| `?` | Help |
+| `?` | All shortcuts and commands |
 
 ---
 

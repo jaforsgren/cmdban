@@ -1,6 +1,7 @@
 package config
 
 import (
+	"slices"
 	"os"
 	"path/filepath"
 	"strings"
@@ -466,6 +467,121 @@ func TestUsesBoardColumnsRequiresFieldAndMappings(t *testing.T) {
 	for _, tt := range tests {
 		if got := tt.cfg.UsesBoardColumns(); got != tt.want {
 			t.Errorf("%s: UsesBoardColumns() = %v, want %v", tt.name, got, tt.want)
+		}
+	}
+}
+
+func TestTouchRecentBoardMovesToFrontAndCaps(t *testing.T) {
+	cfg := &Config{RecentBoards: []string{"a", "b", "c", "d"}}
+
+	cfg.TouchRecentBoard("c")
+	cfg.TouchRecentBoard("e")
+
+	want := []string{"e", "c", "a", "b"}
+	if !slices.Equal(cfg.RecentBoards, want) {
+		t.Fatalf("RecentBoards = %v, want %v", cfg.RecentBoards, want)
+	}
+}
+
+func TestRecentBoardNamesSkipsDeletedAndIncludesCurrent(t *testing.T) {
+	cfg := &Config{
+		CurrentBoard: "new",
+		RecentBoards: []string{"gone", "old"},
+		Boards:       []Board{{Name: "old"}, {Name: "new"}},
+	}
+
+	want := []string{"new", "old"}
+	if got := cfg.RecentBoardNames(); !slices.Equal(got, want) {
+		t.Fatalf("RecentBoardNames() = %v, want %v", got, want)
+	}
+}
+
+func TestNextRecentBoardWrapsAround(t *testing.T) {
+	cfg := &Config{
+		CurrentBoard: "c",
+		RecentBoards: []string{"a", "b", "c"},
+		Boards:       []Board{{Name: "a"}, {Name: "b"}, {Name: "c"}},
+	}
+
+	if got := cfg.NextRecentBoard(); got != "a" {
+		t.Fatalf("NextRecentBoard() = %q, want %q", got, "a")
+	}
+}
+
+func TestNextRecentBoardEmptyWithSingleBoard(t *testing.T) {
+	cfg := &Config{CurrentBoard: "a", Boards: []Board{{Name: "a"}}}
+
+	if got := cfg.NextRecentBoard(); got != "" {
+		t.Fatalf("NextRecentBoard() = %q, want empty", got)
+	}
+}
+
+func stateLaneTestBoard() *Board {
+	return &Board{
+		Type: BoardTypeAzureDevOps,
+		AzureDevOps: &AzureDevOpsConfig{
+			BoardColumnField: "WEF_X_Kanban.Column",
+			BoardColumns: []BoardColumnMapping{
+				{Lane: "todo", Column: "ToDo", States: map[string]string{"User Story": "New", "Bug": "New"}},
+				{Lane: "in-progress", Column: "In progress", States: map[string]string{"User Story": "Active", "Bug": "Active"}},
+				{Lane: "review", Column: "Review", States: map[string]string{"User Story": "Active", "Bug": "Active"}},
+				{Lane: "closed", Column: "Closed", States: map[string]string{"User Story": "Closed", "Bug": "Closed"}},
+			},
+		},
+		Columns: []Column{{Name: "todo"}, {Name: "in-progress"}, {Name: "review", Hidden: true}, {Name: "closed", Hidden: true}},
+	}
+}
+
+func TestStateLanesFollowColumnOrderWithoutDuplicates(t *testing.T) {
+	got := stateLaneTestBoard().AzureDevOps.StateLanes()
+
+	want := []StateLane{{"new", "New"}, {"active", "Active"}, {"closed", "Closed"}}
+	if !slices.Equal(got, want) {
+		t.Fatalf("StateLanes() = %v, want %v", got, want)
+	}
+}
+
+func TestLaneColumnsInStateModeHidesOnlyFullyHiddenStates(t *testing.T) {
+	board := stateLaneTestBoard()
+	board.AzureDevOps.LaneMode = LaneModeStates
+
+	want := []Column{{Name: "new"}, {Name: "active"}, {Name: "closed", Hidden: true}}
+	if got := board.LaneColumns(); !slices.Equal(got, want) {
+		t.Fatalf("LaneColumns() = %v, want %v", got, want)
+	}
+}
+
+func TestLaneColumnsInColumnModeReturnsBoardColumns(t *testing.T) {
+	board := stateLaneTestBoard()
+
+	if got := board.LaneColumns(); !slices.Equal(got, board.Columns) {
+		t.Fatalf("LaneColumns() = %v, want board columns %v", got, board.Columns)
+	}
+}
+
+func TestToggleLaneModeFlipsBetweenColumnsAndStates(t *testing.T) {
+	ado := stateLaneTestBoard().AzureDevOps
+
+	ado.ToggleLaneMode()
+	if !ado.ShowsStateLanes() {
+		t.Fatal("after first toggle ShowsStateLanes() = false, want true")
+	}
+	ado.ToggleLaneMode()
+	if ado.ShowsStateLanes() {
+		t.Fatal("after second toggle ShowsStateLanes() = true, want false")
+	}
+}
+
+func TestLaneSlug(t *testing.T) {
+	tests := map[string]string{
+		"Waiting for build": "waiting-for-build",
+		"In  Progress!":     "in-progress",
+		"--ToDo--":          "todo",
+		"QA / Test 2":       "qa-test-2",
+	}
+	for in, want := range tests {
+		if got := LaneSlug(in); got != want {
+			t.Errorf("LaneSlug(%q) = %q, want %q", in, got, want)
 		}
 	}
 }
