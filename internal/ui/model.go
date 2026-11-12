@@ -625,7 +625,7 @@ func (m Model) handleNormalMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case key.Matches(msg, m.keys.OpenURL):
 		m.gPressed = false
-		return m.openTaskURL()
+		return m.openBoardOrTaskURL()
 
 	case key.Matches(msg, m.keys.Comments):
 		m.gPressed = false
@@ -1621,13 +1621,24 @@ func (m Model) openTaskURL() (tea.Model, tea.Cmd) {
 		m.message = "No URL found for this task"
 		return m, nil
 	}
+	return m.openURL(url)
+}
 
-	if err := openURLInBrowser(url); err != nil {
+// openBoardOrTaskURL is ctrl+o on the board: ADO boards open the board's web
+// page, local boards (which have none) open the selected task's URL.
+func (m Model) openBoardOrTaskURL() (tea.Model, tea.Cmd) {
+	if !m.config.IsADOBoard() {
+		return m.openTaskURL()
+	}
+	return m.openURL(azuredevops.BoardWebURL(m.config.ActiveBoard().AzureDevOps))
+}
+
+func (m Model) openURL(url string) (tea.Model, tea.Cmd) {
+	if err := openInBrowser(url); err != nil {
 		m.message = "Failed to open URL: " + err.Error()
 		m.logs.Error(m.message)
 		return m, nil
 	}
-
 	m.message = "Opened " + url
 	return m, nil
 }
@@ -1651,6 +1662,9 @@ func (m Model) taskURL(t *task.Task) (string, bool) {
 	}
 	return match, true
 }
+
+// openInBrowser is swapped out in tests so they don't launch a browser.
+var openInBrowser = openURLInBrowser
 
 func openURLInBrowser(url string) error {
 	var c *exec.Cmd

@@ -306,3 +306,16 @@ func TestWorkItemToTaskCarriesCommentCount(t *testing.T) {
 		t.Fatalf("ADOCommentCount = %d, want 3", got.ADOCommentCount)
 	}
 }
+
+func TestBoardWebURL(t *testing.T) {
+	cfg := &config.AzureDevOpsConfig{Org: "lfantdevelophub", Project: "common", Team: "Sejfa Internal", BoardLevel: "Stories", AssignedToMe: true}
+	want := "https://dev.azure.com/lfantdevelophub/common/_boards/board/t/Sejfa%20Internal/Stories?System.AssignedTo=%40me"
+	if got := BoardWebURL(cfg); got != want {
+		t.Fatalf("BoardWebURL() = %q, want %q", got, want)
+	}
+
+	cfg.BoardLevel, cfg.AssignedToMe = "", false
+	if got, want := BoardWebURL(cfg), "https://dev.azure.com/lfantdevelophub/common/_boards/board/t/Sejfa%20Internal"; got != want {
+		t.Fatalf("BoardWebURL() without level = %q, want %q", got, want)
+	}
+}

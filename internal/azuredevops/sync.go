@@ -3,6 +3,7 @@ package azuredevops
 import (
 	"fmt"
 	"html"
+	"net/url"
 	"regexp"
 	"strings"
 	"time"
@@ -344,6 +345,22 @@ func workItemToTask(item WorkItem, cfg *config.AzureDevOpsConfig) *task.Task {
 		CreatedAt:       createdAt,
 		UpdatedAt:       updatedAt,
 	}
+}
+
+const assignedToMeBoardFilter = "System.AssignedTo=%40me"
+
+// BoardWebURL is the board's page in the ADO web UI: the team's Kanban board
+// for the configured board level, filtered to @me on assigned-to-me boards.
+func BoardWebURL(adoCfg *config.AzureDevOpsConfig) string {
+	boardURL := fmt.Sprintf("https://dev.azure.com/%s/%s/_boards/board/t/%s",
+		url.PathEscape(adoCfg.Org), url.PathEscape(adoCfg.Project), url.PathEscape(adoCfg.Team))
+	if adoCfg.BoardLevel != "" {
+		boardURL += "/" + url.PathEscape(adoCfg.BoardLevel)
+	}
+	if adoCfg.AssignedToMe {
+		boardURL += "?" + assignedToMeBoardFilter
+	}
+	return boardURL
 }
 
 // FetchComments returns a work item's comments, wrapping the client's
