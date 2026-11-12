@@ -65,16 +65,18 @@ func DiscoverProjects(org, pat string) ([]string, error) {
 	return names, nil
 }
 
-func DiscoverBoardColumns(org, project, team, boardLevel, pat string) ([]BoardColumn, error) {
+// DiscoverBoard returns the team Kanban board whose name matches boardLevel
+// (e.g. "Stories"), falling back to the team's first board.
+func DiscoverBoard(org, project, team, boardLevel, pat string) (KanbanBoardDetail, error) {
 	c := NewClient(org, project, team, pat)
 
 	boardsURL := fmt.Sprintf("%s/_apis/work/boards?api-version=%s", c.teamURL(), apiVersion)
 	var boards KanbanBoardListResponse
 	if err := c.get(boardsURL, &boards); err != nil {
-		return nil, fmt.Errorf("fetching boards: %w", err)
+		return KanbanBoardDetail{}, fmt.Errorf("fetching boards: %w", err)
 	}
 	if len(boards.Value) == 0 {
-		return nil, fmt.Errorf("no boards found for team %q", team)
+		return KanbanBoardDetail{}, fmt.Errorf("no boards found for team %q", team)
 	}
 
 	boardID := boards.Value[0].ID
@@ -85,16 +87,12 @@ func DiscoverBoardColumns(org, project, team, boardLevel, pat string) ([]BoardCo
 		}
 	}
 
-	columnsURL := fmt.Sprintf(
-		"%s/_apis/work/boards/%s/columns?api-version=%s",
-		c.teamURL(), url.PathEscape(boardID), apiVersion,
-	)
-	var columns BoardColumnListResponse
-	if err := c.get(columnsURL, &columns); err != nil {
-		return nil, fmt.Errorf("fetching board columns: %w", err)
+	boardURL := fmt.Sprintf("%s/_apis/work/boards/%s?api-version=%s", c.teamURL(), url.PathEscape(boardID), apiVersion)
+	var board KanbanBoardDetail
+	if err := c.get(boardURL, &board); err != nil {
+		return KanbanBoardDetail{}, fmt.Errorf("fetching board %q: %w", boardID, err)
 	}
-
-	return columns.Value, nil
+	return board, nil
 }
 
 func DiscoverIterations(org, project, team, pat string) ([]Iteration, error) {

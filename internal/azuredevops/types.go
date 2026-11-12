@@ -43,6 +43,7 @@ type WorkItemFields struct {
 	ChangedDate   string       `json:"System.ChangedDate"`
 	CreatedDate   string       `json:"System.CreatedDate"`
 	Parent        int          `json:"System.Parent"`
+	BoardColumn   string       `json:"System.BoardColumn"`
 }
 
 type WorkItem struct {
@@ -89,15 +90,46 @@ type KanbanBoardListResponse struct {
 	Value []KanbanBoard `json:"value"`
 }
 
+const boardColumnTypeOutgoing = "outgoing"
+
 type BoardColumn struct {
-	ID         string `json:"id"`
-	Name       string `json:"name"`
-	ColumnType string `json:"columnType"` // "incoming", "inProgress", "outgoing"
+	ID            string            `json:"id"`
+	Name          string            `json:"name"`
+	ColumnType    string            `json:"columnType"` // "incoming", "inProgress", "outgoing"
+	StateMappings map[string]string `json:"stateMappings"`
 }
 
-type BoardColumnListResponse struct {
-	Count int           `json:"count"`
-	Value []BoardColumn `json:"value"`
+type FieldReference struct {
+	ReferenceName string `json:"referenceName"`
+}
+
+type BoardFields struct {
+	ColumnField FieldReference `json:"columnField"`
+}
+
+// KanbanBoardDetail is a single team board with its columns and the
+// board-specific WEF field that stores each work item's column.
+type KanbanBoardDetail struct {
+	ID      string        `json:"id"`
+	Name    string        `json:"name"`
+	Columns []BoardColumn `json:"columns"`
+	Fields  BoardFields   `json:"fields"`
+}
+
+// Placement is the set of field values that put a work item in a lane: the
+// state alone for state-mapped boards, or state plus Kanban column.
+type Placement struct {
+	State       string
+	ColumnField string
+	Column      string
+}
+
+func (p Placement) patchOperations() []PatchOperation {
+	ops := []PatchOperation{{Op: "add", Path: "/fields/System.State", Value: p.State}}
+	if p.ColumnField != "" {
+		ops = append(ops, PatchOperation{Op: "add", Path: "/fields/" + p.ColumnField, Value: p.Column})
+	}
+	return ops
 }
 
 type Account struct {

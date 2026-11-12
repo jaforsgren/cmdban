@@ -18,7 +18,7 @@ func stripHTML(s string) string {
 	return html.UnescapeString(strings.TrimSpace(s))
 }
 
-func StateForLane(cfg *config.AzureDevOpsConfig, lane task.Status) string {
+func stateForLane(cfg *config.AzureDevOpsConfig, lane task.Status) string {
 	if state, ok := cfg.ColumnMap[string(lane)]; ok {
 		return state
 	}
@@ -32,6 +32,52 @@ func laneForState(cfg *config.AzureDevOpsConfig, state string) task.Status {
 		}
 	}
 	return task.StatusBacklog
+}
+
+// laneForBoardColumn resolves a work item's lane from its Kanban column.
+// Items not on the configured board (other teams' boards, or types the board
+// doesn't carry) fall back to the first column whose state mapping matches,
+// then to the board's first column so they never vanish from the view.
+func laneForBoardColumn(cfg *config.AzureDevOpsConfig, f WorkItemFields) task.Status {
+	for _, bc := range cfg.BoardColumns {
+		if strings.EqualFold(bc.Column, f.BoardColumn) {
+			return task.Status(bc.Lane)
+		}
+	}
+	for _, bc := range cfg.BoardColumns {
+		if strings.EqualFold(bc.States[f.WorkItemType], f.State) {
+			return task.Status(bc.Lane)
+		}
+	}
+	return task.Status(cfg.BoardColumns[0].Lane)
+}
+
+func laneForWorkItem(cfg *config.AzureDevOpsConfig, f WorkItemFields) task.Status {
+	if cfg.UsesBoardColumns() {
+		return laneForBoardColumn(cfg, f)
+	}
+	return laneForState(cfg, f.State)
+}
+
+// placementForLane returns the field values that move a work item of the
+// given type into lane. Board-column lanes need both the column and the
+// state ADO maps that column to, otherwise ADO snaps the item back to the
+// column matching its current state.
+func placementForLane(cfg *config.AzureDevOpsConfig, lane task.Status, workItemType string) (Placement, error) {
+	if !cfg.UsesBoardColumns() {
+		return Placement{State: stateForLane(cfg, lane)}, nil
+	}
+	for _, bc := range cfg.BoardColumns {
+		if bc.Lane != string(lane) {
+			continue
+		}
+		state, ok := bc.States[workItemType]
+		if !ok {
+			return Placement{}, fmt.Errorf("work item type %q is not on board %q", workItemType, cfg.BoardLevel)
+		}
+		return Placement{State: state, ColumnField: cfg.BoardColumnField, Column: bc.Column}, nil
+	}
+	return Placement{}, fmt.Errorf("lane %q has no board column mapping", lane)
 }
 
 // resolveIterationPath converts a stored iteration value to the full ADO path
@@ -218,7 +264,7 @@ func filterFeaturesAndStories(tasks []*task.Task) []*task.Task {
 
 func workItemToTask(item WorkItem, cfg *config.AzureDevOpsConfig) *task.Task {
 	f := item.Fields
-	lane := laneForState(cfg, f.State)
+	lane := laneForWorkItem(cfg, f)
 	desc := stripHTML(f.Description)
 	reproSteps := stripHTML(f.ReproSteps)
 
@@ -274,10 +320,13 @@ func PushStateChange(adoCfg *config.AzureDevOpsConfig, pat string, t *task.Task,
 	if t.ADOItemID == 0 {
 		return fmt.Errorf("task %q has no ADO item ID", t.ID)
 	}
+	placement, err := placementForLane(adoCfg, newLane, t.ADOWorkItemType)
+	if err != nil {
+		return fmt.Errorf("placing work item %d: %w", t.ADOItemID, err)
+	}
 	client := NewClient(adoCfg.Org, adoCfg.Project, adoCfg.Team, pat)
-	state := StateForLane(adoCfg, newLane)
-	if err := client.UpdateWorkItemState(t.ADOItemID, state); err != nil {
-		return fmt.Errorf("updating work item %d state: %w", t.ADOItemID, err)
+	if err := client.UpdateWorkItemPlacement(t.ADOItemID, placement); err != nil {
+		return fmt.Errorf("updating work item %d placement: %w", t.ADOItemID, err)
 	}
 	return nil
 }
@@ -322,11 +371,14 @@ func CreateRemoteTask(adoCfg *config.AzureDevOpsConfig, pat string, title string
 
 	workItemType := adoCfg.DefaultWorkItemType
 	if workItemType == "" {
-		workItemType = "User Story"
+		workItemType = workItemTypeUserStory
 	}
 
-	state := StateForLane(adoCfg, lane)
-	item, err := client.CreateWorkItem(workItemType, title, state, iterationPath)
+	placement, err := placementForLane(adoCfg, lane, workItemType)
+	if err != nil {
+		return nil, err
+	}
+	item, err := client.CreateWorkItem(workItemType, title, iterationPath, placement)
 	if err != nil {
 		return nil, err
 	}

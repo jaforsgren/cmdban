@@ -235,8 +235,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.adoSetup.selectorIndex = bestMatchIndex(msg.teams, m.adoSetup.team)
 		return m, nil
 
-	case adoBoardColumnsDiscoveredMsg:
-		return m.handleADOBoardColumnsDiscovered(msg.columns)
+	case adoBoardDiscoveredMsg:
+		return m.handleADOBoardDiscovered(msg.board)
+
+	case adoBoardLayoutFetchedMsg:
+		return m.handleADOBoardLayoutFetched(msg)
 
 	case adoIterationsDiscoveredMsg:
 		return m.handleADOIterationsDiscovered(msg.iterations)
@@ -1203,6 +1206,10 @@ func (m Model) handleCommand(cmd string) (tea.Model, tea.Cmd) {
 		m.logScroll = 0
 		m.mode = ModeLogs
 		return m, nil
+
+	case "adocolumns":
+		m.mode = ModeNormal
+		return m.refreshADOBoardLayout(strings.Join(parts[1:], " "))
 
 	default:
 		m.message = "Unknown command: " + parts[0]
@@ -2553,6 +2560,7 @@ func (m Model) renderHelp() string {
   ctrl+b   board switcher       :move   move task to board
   ctrl+m   move task to board   :pats   PAT manager
                                 :logs   error/log viewer
+                                :adocolumns [board]  sync ADO columns
 
   Press ? or ESC to close help
 `

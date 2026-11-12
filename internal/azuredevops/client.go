@@ -180,7 +180,7 @@ func (c *Client) FetchBacklogWorkItemIDs(backlogID string) ([]int, error) {
 
 const workItemBatchSize = 200
 
-const workItemFields = "System.Id,System.Title,System.State,System.Description,Microsoft.VSTS.TCM.ReproSteps,System.Tags,System.WorkItemType,System.AssignedTo,System.IterationPath,System.ChangedDate,System.CreatedDate,System.Parent"
+const workItemFields = "System.Id,System.Title,System.State,System.Description,Microsoft.VSTS.TCM.ReproSteps,System.Tags,System.WorkItemType,System.AssignedTo,System.IterationPath,System.ChangedDate,System.CreatedDate,System.Parent,System.BoardColumn"
 
 // FetchDescendantIDs returns the IDs of rootIDs plus every descendant
 // reachable by following parent→child hierarchy links, in a single WIQL
@@ -296,12 +296,9 @@ func (c *Client) FetchWorkItemsByIDs(ids []int) ([]WorkItem, error) {
 	return all, nil
 }
 
-func (c *Client) UpdateWorkItemState(id int, state string) error {
+func (c *Client) UpdateWorkItemPlacement(id int, placement Placement) error {
 	url := fmt.Sprintf("%s/_apis/wit/workitems/%d?api-version=%s", c.baseURL(), id, apiVersion)
-	ops := []PatchOperation{
-		{Op: "add", Path: "/fields/System.State", Value: state},
-	}
-	return c.patchJSON(url, "application/json-patch+json", ops, nil)
+	return c.patchJSON(url, "application/json-patch+json", placement.patchOperations(), nil)
 }
 
 func (c *Client) UpdateWorkItemTitle(id int, title string) error {
@@ -321,14 +318,13 @@ func (c *Client) UpdateWorkItemTitleAndDescription(id int, title, description st
 	return c.patchJSON(url, "application/json-patch+json", ops, nil)
 }
 
-func (c *Client) CreateWorkItem(workItemType, title, state, iterationPath string) (*WorkItem, error) {
+func (c *Client) CreateWorkItem(workItemType, title, iterationPath string, placement Placement) (*WorkItem, error) {
 	createURL := fmt.Sprintf("%s/_apis/wit/workitems/$%s?api-version=%s", c.baseURL(), url.PathEscape(workItemType), apiVersion)
 
-	ops := []PatchOperation{
+	ops := append([]PatchOperation{
 		{Op: "add", Path: "/fields/System.Title", Value: title},
-		{Op: "add", Path: "/fields/System.State", Value: state},
 		{Op: "add", Path: "/fields/System.IterationPath", Value: iterationPath},
-	}
+	}, placement.patchOperations()...)
 
 	var item WorkItem
 	if err := c.patchJSON(createURL, "application/json-patch+json", ops, &item); err != nil {

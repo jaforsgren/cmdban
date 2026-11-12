@@ -15,8 +15,28 @@ type AzureDevOpsConfig struct {
 	BacklogLevel        string            `yaml:"backlog_level,omitempty"`
 	AssignedToMe        bool              `yaml:"assigned_to_me,omitempty"`
 	PAT                 string            `yaml:"pat"`
-	ColumnMap           map[string]string `yaml:"column_map"`
+	ColumnMap           map[string]string `yaml:"column_map,omitempty"`
 	DefaultWorkItemType string            `yaml:"default_work_item_type,omitempty"`
+	// BoardLevel names the team Kanban board (e.g. "Stories") whose columns
+	// the lanes mirror. It is independent of BacklogLevel, which scopes the
+	// fetched work items.
+	BoardLevel       string               `yaml:"board_level,omitempty"`
+	BoardColumnField string               `yaml:"board_column_field,omitempty"`
+	BoardColumns     []BoardColumnMapping `yaml:"board_columns,omitempty"`
+}
+
+// BoardColumnMapping ties a cmdban lane to an ADO Kanban board column and the
+// work item state each type must be in to sit in that column.
+type BoardColumnMapping struct {
+	Lane   string            `yaml:"lane"`
+	Column string            `yaml:"column"`
+	States map[string]string `yaml:"states"`
+}
+
+// UsesBoardColumns reports whether lanes map to Kanban board columns rather
+// than raw work item states (the legacy ColumnMap behaviour).
+func (c *AzureDevOpsConfig) UsesBoardColumns() bool {
+	return c.BoardColumnField != "" && len(c.BoardColumns) > 0
 }
 
 type Column struct {
@@ -39,11 +59,18 @@ type Config struct {
 	configPath   string
 }
 
-func (c *Config) ActiveBoard() *Board {
+func (c *Config) BoardByName(name string) *Board {
 	for i := range c.Boards {
-		if c.Boards[i].Name == c.CurrentBoard {
+		if c.Boards[i].Name == name {
 			return &c.Boards[i]
 		}
+	}
+	return nil
+}
+
+func (c *Config) ActiveBoard() *Board {
+	if board := c.BoardByName(c.CurrentBoard); board != nil {
+		return board
 	}
 	if len(c.Boards) > 0 {
 		return &c.Boards[0]

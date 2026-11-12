@@ -36,7 +36,7 @@ type adoSetupState struct {
 	teams         []string
 	boardLevel    string
 	isBacklog     bool
-	boardColumns  []azuredevops.BoardColumn
+	boardDetail   azuredevops.KanbanBoardDetail
 	iterations    []azuredevops.Iteration
 	iteration     string
 	boardName     string
@@ -49,8 +49,12 @@ type adoOrgsDiscoveredMsg struct{ orgs []string }
 type adoOrgsDiscoveryFailedMsg struct{ err error }
 type adoProjectsDiscoveredMsg struct{ projects []string }
 type adoTeamsDiscoveredMsg struct{ teams []string }
-type adoBoardColumnsDiscoveredMsg struct{ columns []azuredevops.BoardColumn }
+type adoBoardDiscoveredMsg struct{ board azuredevops.KanbanBoardDetail }
 type adoIterationsDiscoveredMsg struct{ iterations []azuredevops.Iteration }
+type adoBoardLayoutFetchedMsg struct {
+	boardName string
+	detail    azuredevops.KanbanBoardDetail
+}
 
 func (m Model) startADOSetup() (tea.Model, tea.Cmd) {
 	if len(m.patStore.PATs) == 0 {
@@ -137,7 +141,7 @@ func (m Model) handleADOSetupMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.adoSetup.team = selected
 			m.adoSetup.boardName = strings.ToLower(strings.ReplaceAll(m.adoSetup.project, " ", "-")) + "-sprint"
 			m.adoSetup.loading = true
-			return m, m.discoverBoardColumns
+			return m, m.discoverBoard
 		})
 	case adoSetupStepSelectIteration:
 		return m.handleADOSetupSelectIteration(msg)
@@ -239,22 +243,22 @@ func (m Model) discoverTeams() tea.Msg {
 	return adoTeamsDiscoveredMsg{teams}
 }
 
-func (m Model) discoverBoardColumns() tea.Msg {
+func (m Model) discoverBoard() tea.Msg {
 	token, ok := m.patStore.Get(m.adoSetup.patAlias)
 	if !ok {
 		return errMsg{fmt.Errorf("PAT %q not found", m.adoSetup.patAlias)}
 	}
-	columns, err := azuredevops.DiscoverBoardColumns(
+	board, err := azuredevops.DiscoverBoard(
 		m.adoSetup.org, m.adoSetup.project, m.adoSetup.team, m.adoSetup.boardLevel, token,
 	)
 	if err != nil {
 		return errMsg{err}
 	}
-	return adoBoardColumnsDiscoveredMsg{columns}
+	return adoBoardDiscoveredMsg{board}
 }
 
-func (m Model) handleADOBoardColumnsDiscovered(columns []azuredevops.BoardColumn) (tea.Model, tea.Cmd) {
-	m.adoSetup.boardColumns = columns
+func (m Model) handleADOBoardDiscovered(board azuredevops.KanbanBoardDetail) (tea.Model, tea.Cmd) {
+	m.adoSetup.boardDetail = board
 	if m.adoSetup.isBacklog {
 		// Backlog levels aren't scoped to a sprint iteration, so there's
 		// nothing to pick — skip straight to naming the board.
@@ -299,51 +303,6 @@ func (m Model) enterBoardNameStep() (tea.Model, tea.Cmd) {
 	return m, textinput.Blink
 }
 
-func generateColumnConfig(boardColumns []azuredevops.BoardColumn) ([]config.Column, map[string]string) {
-	slugCounts := map[string]int{}
-	type pair struct {
-		slug    string
-		adoName string
-	}
-	pairs := make([]pair, 0, len(boardColumns))
-	for _, bc := range boardColumns {
-		s := slugify(bc.Name)
-		slugCounts[s]++
-		pairs = append(pairs, pair{s, bc.Name})
-	}
-
-	seen := map[string]int{}
-	columns := make([]config.Column, 0, len(pairs))
-	columnMap := make(map[string]string, len(pairs))
-	for _, p := range pairs {
-		slug := p.slug
-		if slugCounts[slug] > 1 {
-			seen[slug]++
-			slug = fmt.Sprintf("%s-%d", slug, seen[slug])
-		}
-		columns = append(columns, config.Column{Name: slug})
-		columnMap[slug] = p.adoName
-	}
-	return columns, columnMap
-}
-
-func slugify(s string) string {
-	s = strings.ToLower(s)
-	var b strings.Builder
-	for _, r := range s {
-		if r >= 'a' && r <= 'z' || r >= '0' && r <= '9' {
-			b.WriteRune(r)
-		} else if b.Len() > 0 {
-			last := rune(b.String()[b.Len()-1])
-			if last != '-' {
-				b.WriteRune('-')
-			}
-		}
-	}
-	result := strings.TrimRight(b.String(), "-")
-	return result
-}
-
 // backlogLevelFor returns the ADO backlog level to store for a backlog-
 // sourced board, or "" for a Kanban board (which is scoped by iteration).
 func backlogLevelFor(setup adoSetupState) string {
@@ -355,21 +314,6 @@ func backlogLevelFor(setup adoSetupState) string {
 
 func (m Model) saveADOBoard(boardName string) (tea.Model, tea.Cmd) {
 	setup := m.adoSetup
-	columns, columnMap := generateColumnConfig(setup.boardColumns)
-	if len(columns) == 0 {
-		columns = []config.Column{
-			{Name: "today"},
-			{Name: "tomorrow"},
-			{Name: "backlog"},
-			{Name: "done"},
-		}
-		columnMap = map[string]string{
-			"today":    "Active",
-			"tomorrow": "Committed",
-			"backlog":  "New",
-			"done":     "Closed",
-		}
-	}
 	board := config.Board{
 		Name: boardName,
 		Type: config.BoardTypeAzureDevOps,
@@ -380,10 +324,24 @@ func (m Model) saveADOBoard(boardName string) (tea.Model, tea.Cmd) {
 			Iteration:           setup.iteration,
 			BacklogLevel:        backlogLevelFor(setup),
 			PAT:                 setup.patAlias,
-			ColumnMap:           columnMap,
 			DefaultWorkItemType: "User Story",
 		},
-		Columns: columns,
+	}
+	if len(setup.boardDetail.Columns) > 0 {
+		azuredevops.ApplyBoardLayout(&board, setup.boardDetail)
+	} else {
+		board.Columns = []config.Column{
+			{Name: "today"},
+			{Name: "tomorrow"},
+			{Name: "backlog"},
+			{Name: "done"},
+		}
+		board.AzureDevOps.ColumnMap = map[string]string{
+			"today":    "Active",
+			"tomorrow": "Committed",
+			"backlog":  "New",
+			"done":     "Closed",
+		}
 	}
 	m.config.Boards = append(m.config.Boards, board)
 	if err := m.config.Save(); err != nil {
@@ -577,4 +535,52 @@ func (m Model) handleADOOrgsDiscoveryFailed(err error) (tea.Model, tea.Cmd) {
 	m.textInput.EchoMode = textinput.EchoNormal
 	m.textInput.Focus()
 	return m, textinput.Blink
+}
+
+// refreshADOBoardLayout re-reads the active board's Kanban columns from ADO.
+// An explicit boardLevel (e.g. "Stories") switches which team board is used.
+func (m Model) refreshADOBoardLayout(boardLevel string) (tea.Model, tea.Cmd) {
+	if !m.config.IsADOBoard() {
+		m.message = "Not an Azure DevOps board"
+		return m, nil
+	}
+	board := m.config.ActiveBoard()
+	adoCfg := board.AzureDevOps
+	if boardLevel == "" {
+		boardLevel = adoCfg.BoardLevel
+	}
+	m.message = "Fetching board columns..."
+	return m, func() tea.Msg {
+		token, ok := m.patStore.Get(adoCfg.PAT)
+		if !ok {
+			return errMsg{fmt.Errorf("PAT %q not found — run :pats to add it", adoCfg.PAT)}
+		}
+		detail, err := azuredevops.DiscoverBoard(adoCfg.Org, adoCfg.Project, adoCfg.Team, boardLevel, token)
+		if err != nil {
+			return errMsg{err}
+		}
+		return adoBoardLayoutFetchedMsg{boardName: board.Name, detail: detail}
+	}
+}
+
+func (m Model) handleADOBoardLayoutFetched(msg adoBoardLayoutFetchedMsg) (tea.Model, tea.Cmd) {
+	if len(msg.detail.Columns) == 0 {
+		m.message = fmt.Sprintf("ADO board %q has no columns", msg.detail.Name)
+		m.logs.Error(m.message)
+		return m, nil
+	}
+	board := m.config.BoardByName(msg.boardName)
+	if board == nil || board.AzureDevOps == nil {
+		m.message = fmt.Sprintf("Board %q no longer exists", msg.boardName)
+		m.logs.Error(m.message)
+		return m, nil
+	}
+	azuredevops.ApplyBoardLayout(board, msg.detail)
+	if err := m.config.Save(); err != nil {
+		m.message = "Error saving config: " + err.Error()
+		m.logs.Error(m.message)
+		return m, nil
+	}
+	m.message = fmt.Sprintf("Columns synced from ADO board %q", msg.detail.Name)
+	return m, m.loadTasks
 }

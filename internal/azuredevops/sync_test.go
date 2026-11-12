@@ -156,3 +156,104 @@ func TestWorkItemToTaskNoParent(t *testing.T) {
 		t.Fatalf("ADOParentID = %d, want 0", got.ADOParentID)
 	}
 }
+
+func boardColumnsConfig() *config.AzureDevOpsConfig {
+	board := &config.Board{AzureDevOps: &config.AzureDevOpsConfig{}}
+	ApplyBoardLayout(board, storiesBoardDetail())
+	return board.AzureDevOps
+}
+
+func TestLaneForWorkItemUsesBoardColumn(t *testing.T) {
+	cfg := boardColumnsConfig()
+
+	got := laneForWorkItem(cfg, WorkItemFields{WorkItemType: "Bug", State: "Active", BoardColumn: "Review"})
+
+	if got != "review" {
+		t.Fatalf("laneForWorkItem() = %q, want %q", got, "review")
+	}
+}
+
+func TestLaneForWorkItemFallsBackToStateMappingOffBoard(t *testing.T) {
+	cfg := boardColumnsConfig()
+
+	got := laneForWorkItem(cfg, WorkItemFields{WorkItemType: "User Story", State: "Resolved"})
+
+	if got != "waiting-for-build" {
+		t.Fatalf("laneForWorkItem() = %q, want %q", got, "waiting-for-build")
+	}
+}
+
+func TestLaneForWorkItemFallsBackToFirstLaneForUnmappedType(t *testing.T) {
+	cfg := boardColumnsConfig()
+
+	got := laneForWorkItem(cfg, WorkItemFields{WorkItemType: "Task", State: "Done"})
+
+	if got != "todo" {
+		t.Fatalf("laneForWorkItem() = %q, want %q", got, "todo")
+	}
+}
+
+func TestLaneForWorkItemUsesStateMapForLegacyBoards(t *testing.T) {
+	cfg := &config.AzureDevOpsConfig{ColumnMap: map[string]string{"active": "Active"}}
+
+	got := laneForWorkItem(cfg, WorkItemFields{State: "Active", BoardColumn: "Review"})
+
+	if got != "active" {
+		t.Fatalf("laneForWorkItem() = %q, want %q", got, "active")
+	}
+}
+
+func TestPlacementForLaneSetsColumnAndMappedState(t *testing.T) {
+	cfg := boardColumnsConfig()
+
+	got, err := placementForLane(cfg, "review", "Bug")
+	if err != nil {
+		t.Fatalf("placementForLane() error = %v", err)
+	}
+
+	want := Placement{State: "Active", ColumnField: testColumnField, Column: "Review"}
+	if got != want {
+		t.Fatalf("placementForLane() = %+v, want %+v", got, want)
+	}
+}
+
+func TestPlacementForLaneRejectsTypeNotOnBoard(t *testing.T) {
+	cfg := boardColumnsConfig()
+
+	if _, err := placementForLane(cfg, "review", "Task"); err == nil {
+		t.Fatal("placementForLane() error = nil, want an error for a type the board doesn't carry")
+	}
+}
+
+func TestPlacementForLaneRejectsUnknownLane(t *testing.T) {
+	cfg := boardColumnsConfig()
+
+	if _, err := placementForLane(cfg, "nope", "Bug"); err == nil {
+		t.Fatal("placementForLane() error = nil, want an error for an unmapped lane")
+	}
+}
+
+func TestPlacementForLaneUsesStateOnlyForLegacyBoards(t *testing.T) {
+	cfg := &config.AzureDevOpsConfig{ColumnMap: map[string]string{"active": "Active"}}
+
+	got, err := placementForLane(cfg, "active", "Bug")
+	if err != nil {
+		t.Fatalf("placementForLane() error = %v", err)
+	}
+
+	if got != (Placement{State: "Active"}) {
+		t.Fatalf("placementForLane() = %+v, want state-only placement", got)
+	}
+}
+
+func TestPlacementPatchOperations(t *testing.T) {
+	stateOnly := Placement{State: "Active"}.patchOperations()
+	if len(stateOnly) != 1 || stateOnly[0].Path != "/fields/System.State" {
+		t.Fatalf("state-only patchOperations() = %+v, want a single System.State op", stateOnly)
+	}
+
+	withColumn := Placement{State: "Active", ColumnField: testColumnField, Column: "Review"}.patchOperations()
+	if len(withColumn) != 2 || withColumn[1].Path != "/fields/"+testColumnField || withColumn[1].Value != "Review" {
+		t.Fatalf("board patchOperations() = %+v, want state plus column op", withColumn)
+	}
+}

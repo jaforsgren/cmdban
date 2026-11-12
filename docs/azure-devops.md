@@ -1,16 +1,17 @@
 # Azure DevOps Integration
 
-cmdban connects directly to Azure DevOps sprint backlogs. Work items appear as Kanban cards in the terminal. Moving a card between columns updates the work item state in ADO via the REST API.
+cmdban connects directly to Azure DevOps sprint backlogs. Work items appear as Kanban cards in the terminal. Lanes mirror the team's Kanban board columns (e.g. ToDo, In progress, Review, Test), and moving a card moves the work item to that column in ADO via the REST API.
 
 ## What syncs
 
 | Operation | Behaviour |
 |-----------|-----------|
 | Load board | Fetches current sprint work items via WIQL |
-| Move task `H` / `L` | PATCH `System.State` in ADO |
+| Move task `H` / `L` | PATCH the board column field and its mapped `System.State` in ADO |
 | Create task `a` | POST new work item in ADO |
 | Edit title `e` | PATCH `System.Title` in ADO |
 | Refresh `r` | Re-fetches entire sprint |
+| `:adocolumns [board]` | Re-reads the Kanban board columns and rebuilds the lanes |
 | Delete, tags, reorder | Blocked — manage in ADO web UI |
 
 ---
@@ -78,6 +79,10 @@ Projects are fetched from the selected organisation. Pick from the list.
 
 Teams are fetched from the selected project. Pick from the team you want to track.
 
+### Columns
+
+After the team is chosen, cmdban reads the Kanban board named in the pasted URL (e.g. `Stories`) and creates one lane per board column. The outgoing (done) column starts hidden.
+
 ### Board name
 
 A default name is suggested based on the project name (e.g. `platform-sprint`). Edit it or accept as-is.
@@ -103,18 +108,31 @@ boards:
       pat: myorg
       default_work_item_type: "User Story"
 
-      column_map:
-        today: "Active"
-        tomorrow: "Committed"
-        backlog: "New"
-        done: "Closed"
+      board_level: Stories
+      board_column_field: WEF_A75FEBC061DF4941B6154C10660F0B84_Kanban.Column
+      board_columns:
+        - lane: todo
+          column: ToDo
+          states: { User Story: New, Bug: New }
+        - lane: in-progress
+          column: In progress
+          states: { User Story: Active, Bug: Active }
+        - lane: review
+          column: Review
+          states: { User Story: Active, Bug: Active }
+        - lane: closed
+          column: Closed
+          states: { User Story: Closed, Bug: Closed }
 
     columns:
-      - name: today
-      - name: tomorrow
-      - name: backlog
-      - name: done
+      - name: todo
+      - name: in-progress
+      - name: review
+      - name: closed
+        hidden: true
 ```
+
+You rarely write `board_columns` by hand: run `:adocolumns` on the board and cmdban fills in `board_level`, `board_column_field`, `board_columns` and `columns` from ADO. Pass a board name to switch boards, e.g. `:adocolumns Stories`. Hidden flags on lanes that already exist are kept.
 
 ### `iteration`
 
@@ -124,9 +142,16 @@ Use `@CurrentIteration` to always track the team's active sprint, or specify a p
 iteration: "Platform\\Sprint 42"
 ```
 
-### `column_map`
+### `board_columns`
 
-Maps cmdban column names (left) to ADO work item states (right). Adjust right-hand values to match your process. Common examples:
+Maps each cmdban lane to a Kanban board column, plus the state each work item type must be in for that column. Several columns can share a state (In progress and Review are both `Active` above), which is why cmdban tracks the column itself rather than the state:
+
+- **Reading** — a card's lane comes from `System.BoardColumn`. Items that aren't on this board (other teams' boards, or types such as Task) fall back to the first column whose state mapping matches, then to the first column.
+- **Moving** — cmdban writes both `board_column_field` and the mapped `System.State`. Moving a work item type that the board doesn't carry fails with an error.
+
+### `column_map` (legacy)
+
+Older boards without `board_columns` map lanes to work item states directly. Run `:adocolumns` to upgrade them. Maps cmdban column names (left) to ADO work item states (right). Adjust right-hand values to match your process. Common examples:
 
 | ADO process | States |
 |-------------|--------|

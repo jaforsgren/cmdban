@@ -440,3 +440,32 @@ func TestMultipleBoards(t *testing.T) {
 		t.Errorf("Expected task directory '/personal/tasks', got '%s'", cfg.TaskDirectory())
 	}
 }
+
+func TestBoardByName(t *testing.T) {
+	cfg := &Config{Boards: []Board{{Name: "first"}, {Name: "second"}}}
+
+	if got := cfg.BoardByName("second"); got == nil || got != &cfg.Boards[1] {
+		t.Fatalf("BoardByName(%q) = %v, want pointer to Boards[1]", "second", got)
+	}
+	if got := cfg.BoardByName("missing"); got != nil {
+		t.Fatalf("BoardByName(%q) = %v, want nil", "missing", got)
+	}
+}
+
+func TestUsesBoardColumnsRequiresFieldAndMappings(t *testing.T) {
+	mappings := []BoardColumnMapping{{Lane: "todo", Column: "ToDo"}}
+	tests := []struct {
+		name string
+		cfg  AzureDevOpsConfig
+		want bool
+	}{
+		{"legacy state map", AzureDevOpsConfig{ColumnMap: map[string]string{"todo": "New"}}, false},
+		{"field without mappings", AzureDevOpsConfig{BoardColumnField: "WEF_X_Kanban.Column"}, false},
+		{"field with mappings", AzureDevOpsConfig{BoardColumnField: "WEF_X_Kanban.Column", BoardColumns: mappings}, true},
+	}
+	for _, tt := range tests {
+		if got := tt.cfg.UsesBoardColumns(); got != tt.want {
+			t.Errorf("%s: UsesBoardColumns() = %v, want %v", tt.name, got, tt.want)
+		}
+	}
+}
