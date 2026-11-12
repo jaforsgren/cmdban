@@ -9,6 +9,7 @@ cmdban connects directly to Azure DevOps sprint backlogs. Work items appear as K
 | Load board | Fetches current sprint work items via WIQL |
 | Move task `H` / `L` | PATCH the board column field and its mapped `System.State` in ADO; if ADO rejects the move the board reloads to show where the item really is |
 | Create task `a` | POST new work item in the board's first column (New / ToDo), assigned to the PAT owner, in the team's default area and iteration (or the configured `iteration`) |
+| Create bug `b` | Same as `a`, but creates a `Bug` |
 | Toggle done `d` | Moves the work item to the last column, or back to the first |
 | Edit title `e` | PATCH `System.Title` in ADO |
 | Refresh `r` | Re-fetches entire sprint |

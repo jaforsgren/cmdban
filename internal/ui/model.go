@@ -33,6 +33,11 @@ const (
 	footerPaddingCols     = 2
 )
 
+const (
+	inputActionNewTask = "new"
+	inputActionNewBug  = "new-bug"
+)
+
 var urlRegex = regexp.MustCompile(`https?://[^\s)\]]+`)
 
 type Mode int
@@ -441,14 +446,16 @@ func (m Model) handleNormalMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.reorderTask(1)
 
 	case key.Matches(msg, m.keys.New):
-		m.mode = ModeInput
-		m.inputAction = "new"
-		m.textInput.Reset()
-		m.textInput.Placeholder = "Task title..."
-		m.textInput.EchoMode = textinput.EchoNormal
-		m.textInput.Focus()
 		m.gPressed = false
-		return m, textinput.Blink
+		return m.startNewTaskInput(inputActionNewTask, "Task title...")
+
+	case key.Matches(msg, m.keys.NewBug):
+		m.gPressed = false
+		if !m.config.IsADOBoard() {
+			m.message = "Bugs can only be created on Azure DevOps boards"
+			return m, nil
+		}
+		return m.startNewTaskInput(inputActionNewBug, "Bug title...")
 
 	case key.Matches(msg, m.keys.Edit):
 		t := m.selectedTask()
@@ -596,8 +603,10 @@ func (m Model) handleInputMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 		switch m.inputAction {
-		case "new":
-			return m.createTask(value)
+		case inputActionNewTask:
+			return m.createTask(value, m.defaultWorkItemType())
+		case inputActionNewBug:
+			return m.createTask(value, azuredevops.WorkItemTypeBug)
 		case "edit":
 			return m.editTask(value)
 		case "settings":
@@ -907,14 +916,16 @@ func (m Model) handleFocusMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.reorderTask(1)
 
 	case key.Matches(msg, m.keys.New):
-		m.mode = ModeInput
-		m.inputAction = "new"
-		m.textInput.Reset()
-		m.textInput.Placeholder = "Task title..."
-		m.textInput.EchoMode = textinput.EchoNormal
-		m.textInput.Focus()
 		m.gPressed = false
-		return m, textinput.Blink
+		return m.startNewTaskInput(inputActionNewTask, "Task title...")
+
+	case key.Matches(msg, m.keys.NewBug):
+		m.gPressed = false
+		if !m.config.IsADOBoard() {
+			m.message = "Bugs can only be created on Azure DevOps boards"
+			return m, nil
+		}
+		return m.startNewTaskInput(inputActionNewBug, "Bug title...")
 
 	case key.Matches(msg, m.keys.Edit):
 		t := m.selectedTask()
@@ -1284,13 +1295,34 @@ func (m Model) handleSettingsCommand(value string) (tea.Model, tea.Cmd) {
 	return m, m.loadTasks
 }
 
-func (m Model) createTask(title string) (tea.Model, tea.Cmd) {
+func (m Model) startNewTaskInput(action, placeholder string) (tea.Model, tea.Cmd) {
+	m.mode = ModeInput
+	m.inputAction = action
+	m.textInput.Reset()
+	m.textInput.Placeholder = placeholder
+	m.textInput.EchoMode = textinput.EchoNormal
+	m.textInput.Focus()
+	return m, textinput.Blink
+}
+
+// defaultWorkItemType is the type `a` creates on an ADO board; it is unused
+// on local boards.
+func (m Model) defaultWorkItemType() string {
+	if !m.config.IsADOBoard() {
+		return ""
+	}
+	return azuredevops.DefaultWorkItemType(m.config.ActiveBoard().AzureDevOps)
+}
+
+// createTask adds a task to the new-task lane; on ADO boards it creates a
+// work item of workItemType.
+func (m Model) createTask(title, workItemType string) (tea.Model, tea.Cmd) {
 	m.mode = ModeNormal
 	lane := m.newTaskLane()
 
 	if m.config.IsADOBoard() {
-		m.message = "Creating work item..."
-		return m, m.createADOTask(title, lane)
+		m.message = fmt.Sprintf("Creating %s...", workItemType)
+		return m, m.createADOTask(title, workItemType, lane)
 	}
 
 	return m, func() tea.Msg {
@@ -1316,14 +1348,14 @@ func (m Model) newTaskLane() task.Status {
 	return m.board.Lanes[m.activeLane]
 }
 
-func (m Model) createADOTask(title string, lane task.Status) tea.Cmd {
+func (m Model) createADOTask(title, workItemType string, lane task.Status) tea.Cmd {
 	adoCfg := m.config.ActiveBoard().AzureDevOps
 	return func() tea.Msg {
 		token, ok := m.patStore.Get(adoCfg.PAT)
 		if !ok {
 			return errMsg{fmt.Errorf("PAT %q not found — run :pats to add it", adoCfg.PAT)}
 		}
-		t, err := azuredevops.CreateRemoteTask(adoCfg, token, title, lane)
+		t, err := azuredevops.CreateRemoteTask(adoCfg, token, title, workItemType, lane)
 		if err != nil {
 			return errMsg{err}
 		}

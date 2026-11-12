@@ -256,6 +256,7 @@ func filterForBoardMode(tasks []*task.Task, backlogLevel string, assignedToMe bo
 
 const (
 	workItemTypeUserStory = "User Story"
+	WorkItemTypeBug       = "Bug"
 	workItemTypeFeature   = "Feature"
 )
 
@@ -403,6 +404,15 @@ func htmlizeText(s string) string {
 	return strings.ReplaceAll(escaped, "\n", "<br>\n")
 }
 
+// DefaultWorkItemType is the type created by a plain new task, User Story
+// unless the board configures another.
+func DefaultWorkItemType(adoCfg *config.AzureDevOpsConfig) string {
+	if adoCfg.DefaultWorkItemType == "" {
+		return workItemTypeUserStory
+	}
+	return adoCfg.DefaultWorkItemType
+}
+
 // newWorkItemIterationPath uses the board's configured iteration, or the
 // team's default iteration for boards scoped by backlog or assignee.
 func newWorkItemIterationPath(client *Client, adoCfg *config.AzureDevOpsConfig) (string, error) {
@@ -414,7 +424,7 @@ func newWorkItemIterationPath(client *Client, adoCfg *config.AzureDevOpsConfig) 
 
 // CreateRemoteTask creates a work item in lane, assigned to the PAT owner
 // and placed in the team's area so it shows up on the team board.
-func CreateRemoteTask(adoCfg *config.AzureDevOpsConfig, pat string, title string, lane task.Status) (*task.Task, error) {
+func CreateRemoteTask(adoCfg *config.AzureDevOpsConfig, pat, title, workItemType string, lane task.Status) (*task.Task, error) {
 	client := NewClient(adoCfg.Org, adoCfg.Project, adoCfg.Team, pat)
 
 	iterationPath, err := newWorkItemIterationPath(client, adoCfg)
@@ -430,10 +440,6 @@ func CreateRemoteTask(adoCfg *config.AzureDevOpsConfig, pat string, title string
 		return nil, fmt.Errorf("resolving current user: %w", err)
 	}
 
-	workItemType := adoCfg.DefaultWorkItemType
-	if workItemType == "" {
-		workItemType = workItemTypeUserStory
-	}
 	placement, err := placementForLane(adoCfg, lane, workItemType)
 	if err != nil {
 		return nil, err

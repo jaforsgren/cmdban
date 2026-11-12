@@ -320,7 +320,7 @@ var (
 		{"ctrl+m", "move board"}, {":", "command"}, {"?", "help"},
 	}
 	adoBoardShortcuts = []shortcut{
-		{"0-9", "type filter"}, {"v", "column/state lanes"}, {"c", "comments"}, {"ctrl+o", "open url"},
+		{"b", "new bug"}, {"0-9", "type filter"}, {"v", "column/state lanes"}, {"c", "comments"}, {"ctrl+o", "open url"},
 	}
 )
 
@@ -347,7 +347,7 @@ func shortcutsForMode(mode Mode) []shortcut {
 		}
 	case ModeFocus:
 		return []shortcut{
-			{"tab/q", "exit focus"}, {"j/k", "select"}, {"h/l", "lane"}, {"H/L", "move lane"}, {"a", "new"}, {"e", "edit"},
+			{"tab/q", "exit focus"}, {"j/k", "select"}, {"h/l", "lane"}, {"H/L", "move lane"}, {"a", "new"}, {"b", "new bug"}, {"e", "edit"},
 			{"t", "tag"}, {"m", "mark"}, {"c", "comments"}, {"ctrl+o", "open url"}, {"r", "refresh"},
 		}
 	case ModeBoardSelector:

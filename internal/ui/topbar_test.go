@@ -306,3 +306,49 @@ func TestMovingADOTaskRightMovesLocallyAndPushes(t *testing.T) {
 		t.Fatalf("active lane = %q, want the task followed into %q", m.board.Lanes[m.activeLane], "review")
 	}
 }
+
+func TestBugKeyOnADOBoardPromptsForBugTitle(t *testing.T) {
+	m := pressKey(t, adoTestModel(adoTestConfig()), "b")
+
+	if m.mode != ModeInput || m.inputAction != inputActionNewBug {
+		t.Fatalf("mode = %v, inputAction = %q; want bug title input", m.mode, m.inputAction)
+	}
+}
+
+func TestBugKeyOnLocalBoardShowsMessage(t *testing.T) {
+	cfg := adoTestConfig()
+	cfg.CurrentBoard = "local"
+	m := pressKey(t, adoTestModel(cfg), "b")
+
+	if m.mode != ModeNormal || m.message == "" {
+		t.Fatalf("mode = %v, message = %q; want to stay put with an explanation", m.mode, m.message)
+	}
+}
+
+func TestSubmittingBugTitleCreatesBug(t *testing.T) {
+	m := pressKey(t, adoTestModel(adoTestConfig()), "b")
+	m.textInput.SetValue("Crash on save")
+
+	got, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = got.(Model)
+
+	if cmd == nil || m.mode != ModeNormal {
+		t.Fatalf("cmd = %v, mode = %v; want the bug created", cmd, m.mode)
+	}
+	if !strings.Contains(m.message, "Bug") {
+		t.Fatalf("message = %q, want it to mention the Bug being created", m.message)
+	}
+}
+
+func TestDefaultWorkItemTypeOnADOBoard(t *testing.T) {
+	cfg := adoTestConfig()
+	m := adoTestModel(cfg)
+	if got := m.defaultWorkItemType(); got != "User Story" {
+		t.Fatalf("defaultWorkItemType() = %q, want %q", got, "User Story")
+	}
+
+	cfg.Boards[1].AzureDevOps.DefaultWorkItemType = "Task"
+	if got := m.defaultWorkItemType(); got != "Task" {
+		t.Fatalf("defaultWorkItemType() = %q, want configured %q", got, "Task")
+	}
+}

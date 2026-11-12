@@ -155,6 +155,7 @@ See **[docs/azure-devops.md](docs/azure-devops.md)** for full setup instructions
 
 | Key | Action |
 |-----|--------|
+| `b` | New Bug, created like `a` (first column, assigned to you) |
 | `0`–`9` | Filter by work item type (`0` = all, numbers listed in the topbar's TYPES section) |
 | `v` | Toggle lanes between Kanban board columns and work item states |
 | `ctrl+o` | Open work item in browser |

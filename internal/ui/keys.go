@@ -39,6 +39,7 @@ type KeyMap struct {
 	TypeFilter      key.Binding
 	ToggleLanes     key.Binding
 	NextRecentBoard key.Binding
+	NewBug          key.Binding
 	CommentsPane    key.Binding
 	CommentsDown    key.Binding
 	CommentsUp      key.Binding
@@ -188,6 +189,10 @@ var DefaultKeyMap = KeyMap{
 	NextRecentBoard: key.NewBinding(
 		key.WithKeys("ctrl+n"),
 		key.WithHelp("ctrl+n", "next recent board"),
+	),
+	NewBug: key.NewBinding(
+		key.WithKeys("b"),
+		key.WithHelp("b", "new bug (ADO)"),
 	),
 	CommentsPane: key.NewBinding(
 		key.WithKeys("tab"),
