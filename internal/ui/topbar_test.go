@@ -421,3 +421,24 @@ func TestToggleTopBarHidesAndPersists(t *testing.T) {
 		t.Fatal("topbar not rendered after second T")
 	}
 }
+
+func TestToggleTopBarWorksInSidePaneButNotWhileTyping(t *testing.T) {
+	m := adoTestModel(savableConfig(t, adoTestConfig()))
+	m.mode = ModeView
+	m.viewCommentsPane = true
+
+	m = pressKey(t, m, "T")
+	if !m.config.HideTopBar || m.mode != ModeView || !m.viewCommentsPane {
+		t.Fatalf("HideTopBar = %v, mode = %v, pane = %v; want topbar hidden and the side pane kept", m.config.HideTopBar, m.mode, m.viewCommentsPane)
+	}
+
+	m.mode = ModeNormal
+	m = pressKey(t, m, "/")
+	if m.mode != ModeSearch {
+		t.Fatalf("mode = %v after /, want ModeSearch", m.mode)
+	}
+	m = pressKey(t, m, "T")
+	if !m.config.HideTopBar {
+		t.Fatal("T while typing a search toggled the topbar, want it typed instead")
+	}
+}

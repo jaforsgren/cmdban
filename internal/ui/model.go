@@ -342,6 +342,11 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleConfirmMode(msg)
 	}
 
+	if !m.isTextEntryMode() && key.Matches(msg, m.keys.ToggleTopBar) {
+		m.gPressed = false
+		return m.toggleTopBar()
+	}
+
 	if m.mode == ModeHelp {
 		return m.handleHelpMode(msg)
 	}
@@ -391,6 +396,12 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	return m.handleNormalMode(msg)
+}
+
+// isTextEntryMode reports modes where keys are typed into an input rather
+// than treated as shortcuts.
+func (m Model) isTextEntryMode() bool {
+	return m.mode == ModeInput || m.mode == ModeCommand || m.mode == ModeTag || m.mode == ModeSearch
 }
 
 func (m Model) handleNormalMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -564,10 +575,6 @@ func (m Model) handleNormalMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.mode = ModeBoardSelector
 		m.gPressed = false
 		return m, nil
-
-	case key.Matches(msg, m.keys.ToggleTopBar):
-		m.gPressed = false
-		return m.toggleTopBar()
 
 	case key.Matches(msg, m.keys.LiveReload):
 		m.gPressed = false
