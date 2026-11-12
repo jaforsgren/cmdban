@@ -530,3 +530,48 @@ func TestConfirmedMoveInFocusModeStaysInFocus(t *testing.T) {
 		t.Fatalf("mode = %v after confirming a move in focus mode, want ModeFocus", m.mode)
 	}
 }
+
+func sidePaneViewModel(t *testing.T, cfg *config.Config) Model {
+	t.Helper()
+	m := adoTestModel(cfg)
+	m.mode = ModeView
+	got, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	return got.(Model)
+}
+
+func TestMoveFromSidePaneKeepsTaskViewOpen(t *testing.T) {
+	m := sidePaneViewModel(t, adoTestConfig())
+
+	m = pressKey(t, m, "L")
+	if m.mode != ModeConfirm {
+		t.Fatalf("mode = %v after L, want the confirmation prompt", m.mode)
+	}
+	if view := m.View(); !strings.Contains(view, "Pull requests") || !strings.Contains(view, "REVIEW in Azure DevOps?") {
+		t.Fatal("the side pane should stay on screen while the move prompt is shown")
+	}
+
+	got, cmd := m.Update(keyMsgFor("y"))
+	m = got.(Model)
+
+	if cmd == nil || m.mode != ModeView || !m.viewCommentsPane {
+		t.Fatalf("cmd = %v, mode = %v, pane = %v; want the move pushed and the task view with its pane kept", cmd, m.mode, m.viewCommentsPane)
+	}
+	if selected := m.selectedTask(); selected == nil || selected.ID != "1" || selected.Status != "review" {
+		t.Fatalf("selected = %+v, want the moved task still selected in review", selected)
+	}
+}
+
+func TestMoveFromTaskViewIntoHiddenLaneReturnsToBoard(t *testing.T) {
+	cfg := adoTestConfig()
+	ado := cfg.Boards[1].AzureDevOps
+	ado.BoardColumns = append(ado.BoardColumns, config.BoardColumnMapping{Lane: "closed", Column: "Closed", States: map[string]string{"Bug": "Closed"}})
+	cfg.Boards[1].Columns = append(cfg.Boards[1].Columns, config.Column{Name: "closed", Hidden: true})
+	m := sidePaneViewModel(t, cfg)
+
+	m = pressKey(t, m, "d")
+	m = pressKey(t, m, "y")
+
+	if m.mode != ModeNormal || m.viewCommentsPane {
+		t.Fatalf("mode = %v, pane = %v; want the board once the card moved out of view", m.mode, m.viewCommentsPane)
+	}
+}

@@ -1717,20 +1717,21 @@ func (m Model) requestMove(t *task.Task, lane task.Status) (tea.Model, tea.Cmd) 
 	return m, nil
 }
 
-// applyMove moves t to lane locally, follows it with the selection when the
-// lane is visible, and persists the move. A move started from the task view
-// returns to the board, since the selection may land on a different card;
-// other modes (board, focus) stay where they were.
+// applyMove moves t to lane locally, keeps it selected, and persists the
+// move, staying in the mode it was started from (board, focus, or the task
+// view with its side pane). When the card can't stay selected — moved into a
+// hidden lane or filtered out — a task view falls back to the board rather
+// than showing a different card.
 func (m Model) applyMove(t *task.Task, lane task.Status, fromMode Mode) (tea.Model, tea.Cmd) {
 	m.mode = fromMode
-	if fromMode == ModeView {
-		m.mode = ModeNormal
-	}
 	m.board.MoveTask(t, lane)
-	if i := slices.Index(m.board.Lanes, lane); i >= 0 {
-		m.activeLane = i
+	if !m.selectTask(t) {
+		m.clampSelection()
+		if fromMode == ModeView {
+			m.mode = ModeNormal
+			m.viewCommentsPane = false
+		}
 	}
-	m.clampSelection()
 
 	if m.config.IsADOBoard() {
 		return m, m.pushADOStateChange(t, lane)
@@ -1979,6 +1980,21 @@ func (m Model) toggleMark() (tea.Model, tea.Cmd) {
 	}
 }
 
+// selectTask points the selection at t, reporting false when t isn't in a
+// visible lane or is hidden by the active filters.
+func (m *Model) selectTask(t *task.Task) bool {
+	laneIndex := slices.Index(m.board.Lanes, t.Status)
+	if laneIndex < 0 {
+		return false
+	}
+	taskIndex := slices.Index(m.filterTasks(m.board.Tasks[t.Status]), t)
+	if taskIndex < 0 {
+		return false
+	}
+	m.activeLane, m.activeTask = laneIndex, taskIndex
+	return true
+}
+
 func (m Model) selectedTask() *task.Task {
 	if m.activeLane < 0 || m.activeLane >= len(m.board.Lanes) {
 		return nil
@@ -2029,44 +2045,56 @@ func (m Model) bodyHeight() int {
 	return max(m.height-m.visibleTopBarHeight()-lipgloss.Height(m.renderFooter()), minBodyHeight)
 }
 
+// displayMode is the mode whose screen is drawn: a lane move awaiting
+// confirmation keeps showing the screen it was started from (task view with
+// its side pane, focus) while the prompt sits in the footer.
+func (m Model) displayMode() Mode {
+	if m.mode == ModeConfirm && m.inputAction == inputActionMoveLane {
+		return m.pendingMove.returnMode
+	}
+	return m.mode
+}
+
 func (m Model) renderBoard() string {
-	if m.mode == ModeHelp {
+	mode := m.displayMode()
+
+	if mode == ModeHelp {
 		return m.renderHelp()
 	}
 
-	if m.mode == ModeView {
+	if mode == ModeView {
 		return m.renderTaskDetail()
 	}
 
-	if m.mode == ModeBoardSelector {
+	if mode == ModeBoardSelector {
 		return m.renderBoardSelector()
 	}
 
-	if m.mode == ModeMoveBoard {
+	if mode == ModeMoveBoard {
 		return m.renderMoveBoardSelector()
 	}
 
-	if m.mode == ModePATManager {
+	if mode == ModePATManager {
 		return m.renderPATManager()
 	}
 
-	if m.mode == ModeADOSetup {
+	if mode == ModeADOSetup {
 		return m.renderADOSetup()
 	}
 
-	if m.mode == ModeLogs {
+	if mode == ModeLogs {
 		return m.renderLogs()
 	}
 
-	if m.mode == ModePRPicker {
+	if mode == ModePRPicker {
 		return m.renderPRPicker()
 	}
 
-	if m.mode == ModeComments {
+	if mode == ModeComments {
 		return m.renderComments()
 	}
 
-	if m.mode == ModeFocus {
+	if mode == ModeFocus {
 		return m.renderFocusView()
 	}
 
