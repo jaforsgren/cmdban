@@ -27,6 +27,7 @@ import (
 
 const (
 	minBodyHeight         = 5
+	moveConfirmTitleMax   = 50
 	laneBorderRows        = 2
 	detailPaneChromeRows  = 4 // border and vertical padding
 	localDetailFooterRows = 2 // status rule and footer under the markdown
@@ -34,9 +35,17 @@ const (
 )
 
 const (
-	inputActionNewTask = "new"
-	inputActionNewBug  = "new-bug"
+	inputActionNewTask  = "new"
+	inputActionNewBug   = "new-bug"
+	inputActionMoveLane = "move-lane"
 )
+
+// pendingMove is a lane move waiting for confirmation.
+type pendingMove struct {
+	task       *task.Task
+	lane       task.Status
+	returnMode Mode
+}
 
 var urlRegex = regexp.MustCompile(`https?://[^\s)\]]+`)
 
@@ -106,6 +115,8 @@ type Model struct {
 	linkedPRsLoading    bool
 	linkedPRsWorkItemID int
 	prPicker            prPickerState
+
+	pendingMove pendingMove
 
 	liveReload           bool
 	liveReloadGeneration int
@@ -743,9 +754,18 @@ func (m Model) handleConfirmMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.inputAction == "clear-lane" {
 			return m.clearLane()
 		}
+		if m.inputAction == inputActionMoveLane {
+			move := m.pendingMove
+			m.pendingMove = pendingMove{}
+			return m.applyMove(move.task, move.lane, move.returnMode)
+		}
 		m.mode = ModeNormal
 	case "n", "N", "esc":
 		m.mode = ModeNormal
+		if m.inputAction == inputActionMoveLane {
+			m.mode = m.pendingMove.returnMode
+		}
+		m.pendingMove = pendingMove{}
 	}
 	return m, nil
 }
@@ -801,11 +821,9 @@ func (m Model) handleViewMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case key.Matches(msg, m.keys.MoveLeft):
-		m.mode = ModeNormal
 		return m.moveTaskLeft()
 
 	case key.Matches(msg, m.keys.MoveRight):
-		m.mode = ModeNormal
 		return m.moveTaskRight()
 
 	case key.Matches(msg, m.keys.OrderUp):
@@ -833,7 +851,6 @@ func (m Model) handleViewMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case key.Matches(msg, m.keys.ToggleDone):
-		m.mode = ModeNormal
 		return m.toggleTaskDone()
 
 	case key.Matches(msg, m.keys.MoveToBoard):
@@ -1677,22 +1694,7 @@ func (m Model) moveTaskLeft() (tea.Model, tea.Cmd) {
 	if t == nil || m.activeLane == 0 {
 		return m, nil
 	}
-
-	newLane := m.board.Lanes[m.activeLane-1]
-	m.board.MoveTask(t, newLane)
-	m.activeLane--
-	m.clampSelection()
-
-	if m.config.IsADOBoard() {
-		return m, m.pushADOStateChange(t, newLane)
-	}
-
-	return m, func() tea.Msg {
-		if err := task.WriteMarkdownFile(t); err != nil {
-			return errMsg{err}
-		}
-		return taskSavedMsg{t}
-	}
+	return m.requestMove(t, m.board.Lanes[m.activeLane-1])
 }
 
 func (m Model) moveTaskRight() (tea.Model, tea.Cmd) {
@@ -1700,16 +1702,39 @@ func (m Model) moveTaskRight() (tea.Model, tea.Cmd) {
 	if t == nil || m.activeLane >= len(m.board.Lanes)-1 {
 		return m, nil
 	}
+	return m.requestMove(t, m.board.Lanes[m.activeLane+1])
+}
 
-	newLane := m.board.Lanes[m.activeLane+1]
-	m.board.MoveTask(t, newLane)
-	m.activeLane++
+// requestMove moves t to lane, first asking for confirmation on ADO boards
+// since the move changes the work item for everyone.
+func (m Model) requestMove(t *task.Task, lane task.Status) (tea.Model, tea.Cmd) {
+	if !m.config.IsADOBoard() {
+		return m.applyMove(t, lane, m.mode)
+	}
+	m.pendingMove = pendingMove{task: t, lane: lane, returnMode: m.mode}
+	m.mode = ModeConfirm
+	m.inputAction = inputActionMoveLane
+	return m, nil
+}
+
+// applyMove moves t to lane locally, follows it with the selection when the
+// lane is visible, and persists the move. A move started from the task view
+// returns to the board, since the selection may land on a different card;
+// other modes (board, focus) stay where they were.
+func (m Model) applyMove(t *task.Task, lane task.Status, fromMode Mode) (tea.Model, tea.Cmd) {
+	m.mode = fromMode
+	if fromMode == ModeView {
+		m.mode = ModeNormal
+	}
+	m.board.MoveTask(t, lane)
+	if i := slices.Index(m.board.Lanes, lane); i >= 0 {
+		m.activeLane = i
+	}
 	m.clampSelection()
 
 	if m.config.IsADOBoard() {
-		return m, m.pushADOStateChange(t, newLane)
+		return m, m.pushADOStateChange(t, lane)
 	}
-
 	return m, func() tea.Msg {
 		if err := task.WriteMarkdownFile(t); err != nil {
 			return errMsg{err}
@@ -1872,34 +1897,18 @@ func (m Model) doneToggleTarget(t *task.Task) task.Status {
 	return doneLane
 }
 
+func (m Model) moveConfirmPrompt() string {
+	t := m.pendingMove.task
+	return fmt.Sprintf("Move #%d %q to %s in Azure DevOps? (y/n)",
+		t.ADOItemID, truncateLine(t.Title, moveConfirmTitleMax), strings.ToUpper(string(m.pendingMove.lane)))
+}
+
 func (m Model) toggleTaskDone() (tea.Model, tea.Cmd) {
 	t := m.selectedTask()
 	if t == nil {
 		return m, nil
 	}
-
-	newStatus := m.doneToggleTarget(t)
-
-	m.board.MoveTask(t, newStatus)
-
-	for i, lane := range m.board.Lanes {
-		if lane == newStatus {
-			m.activeLane = i
-			break
-		}
-	}
-	m.clampSelection()
-
-	if m.config.IsADOBoard() {
-		return m, m.pushADOStateChange(t, newStatus)
-	}
-
-	return m, func() tea.Msg {
-		if err := task.WriteMarkdownFile(t); err != nil {
-			return errMsg{err}
-		}
-		return taskSavedMsg{t}
-	}
+	return m.requestMove(t, m.doneToggleTarget(t))
 }
 
 func (m Model) reorderTask(delta int) (tea.Model, tea.Cmd) {
@@ -2419,6 +2428,9 @@ func (m Model) renderFooter() string {
 	if m.mode == ModeConfirm {
 		if m.inputAction == "clear-lane" {
 			return DialogStyle.Render("Archive all tasks in this lane? (y/n)")
+		}
+		if m.inputAction == inputActionMoveLane {
+			return DialogStyle.Render(m.moveConfirmPrompt())
 		}
 		return DialogStyle.Render("Delete task? (y/n)")
 	}

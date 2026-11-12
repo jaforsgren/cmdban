@@ -340,17 +340,60 @@ func TestADOMoveFailureReportsAndReloads(t *testing.T) {
 	}
 }
 
-func TestMovingADOTaskRightMovesLocallyAndPushes(t *testing.T) {
+func TestMovingADOTaskAsksForConfirmationFirst(t *testing.T) {
+	m := pressKey(t, adoTestModel(adoTestConfig()), "L")
+
+	if m.mode != ModeConfirm || m.board.Tasks["todo"][0].ID != "1" {
+		t.Fatalf("mode = %v; want a confirmation prompt with the task not yet moved", m.mode)
+	}
+	if prompt := m.renderFooter(); !strings.Contains(prompt, "#1") || !strings.Contains(prompt, "REVIEW") {
+		t.Fatalf("footer = %q, want the work item and target lane", prompt)
+	}
+
+	got, cmd := m.Update(keyMsgFor("y"))
+	m = got.(Model)
+
+	if cmd == nil || m.mode != ModeNormal {
+		t.Fatalf("cmd = %v, mode = %v after y; want the move pushed", cmd, m.mode)
+	}
+	if m.board.Lanes[m.activeLane] != "review" || m.selectedTask() == nil {
+		t.Fatalf("active lane = %q, want the task followed into %q", m.board.Lanes[m.activeLane], "review")
+	}
+}
+
+func TestDecliningADOMoveLeavesTaskAndReturnsToView(t *testing.T) {
 	m := adoTestModel(adoTestConfig())
+	m.mode = ModeView
+
+	m = pressKey(t, m, "L")
+	got, cmd := m.Update(keyMsgFor("n"))
+	m = got.(Model)
+
+	if cmd != nil || m.mode != ModeView {
+		t.Fatalf("cmd = %v, mode = %v after n; want nothing pushed and back in the task view", cmd, m.mode)
+	}
+	if len(m.board.Tasks["review"]) != 2 || m.board.Tasks["todo"][0].ID != "1" {
+		t.Fatal("declined move still moved the task")
+	}
+}
+
+func TestToggleDoneOnADOBoardAsksForConfirmation(t *testing.T) {
+	m := pressKey(t, adoTestModel(adoTestConfig()), "d")
+
+	if m.mode != ModeConfirm || m.pendingMove.lane != "review" {
+		t.Fatalf("mode = %v, pending = %+v; want confirmation for the last column", m.mode, m.pendingMove)
+	}
+}
+
+func TestMovingLocalTaskDoesNotAskForConfirmation(t *testing.T) {
+	m := NewModel(&config.Config{})
+	m.board.AddTask(&task.Task{ID: "1", Title: "local", Status: m.board.Lanes[0], FilePath: t.TempDir() + "/local.md"})
 
 	got, cmd := m.Update(keyMsgFor("L"))
 	m = got.(Model)
 
-	if cmd == nil {
-		t.Fatal("moving an ADO task returned no command, want the change pushed")
-	}
-	if m.board.Lanes[m.activeLane] != "review" || m.selectedTask() == nil {
-		t.Fatalf("active lane = %q, want the task followed into %q", m.board.Lanes[m.activeLane], "review")
+	if m.mode != ModeNormal || cmd == nil || len(m.board.Tasks[m.board.Lanes[1]]) != 1 {
+		t.Fatalf("mode = %v, cmd = %v; want the local task moved immediately", m.mode, cmd)
 	}
 }
 
@@ -473,5 +516,17 @@ func TestUnassignedToggleOnOtherBoardsShowsMessage(t *testing.T) {
 
 	if m.config.ActiveBoard().AzureDevOps.IncludeUnassigned || m.message == "" {
 		t.Fatalf("IncludeUnassigned = %v, message = %q; want no change and an explanation", m.config.ActiveBoard().AzureDevOps.IncludeUnassigned, m.message)
+	}
+}
+
+func TestConfirmedMoveInFocusModeStaysInFocus(t *testing.T) {
+	m := adoTestModel(adoTestConfig())
+	m.mode = ModeFocus
+
+	m = pressKey(t, m, "L")
+	m = pressKey(t, m, "y")
+
+	if m.mode != ModeFocus {
+		t.Fatalf("mode = %v after confirming a move in focus mode, want ModeFocus", m.mode)
 	}
 }

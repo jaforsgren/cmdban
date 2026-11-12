@@ -7,12 +7,12 @@ cmdban connects directly to Azure DevOps sprint backlogs. Work items appear as K
 | Operation | Behaviour |
 |-----------|-----------|
 | Load board | Fetches current sprint work items via WIQL |
-| Move task `H` / `L` | PATCH the board column field and its mapped `System.State` in ADO; if ADO rejects the move the board reloads to show where the item really is |
+| Move task `H` / `L` | Asks for confirmation (`y`/`n`), then PATCHes the board column field and its mapped `System.State` in ADO; if ADO rejects the move the board reloads to show where the item really is |
 | Create task `a` | POST new work item in the board's first column (New / ToDo), assigned to the PAT owner, in the team's default area and iteration (or the configured `iteration`) |
 | PR pane `tab` (task view) | Reads the work item's PR links (PRs can live in other projects), each PR's reviewers and threads, and for completed PRs the builds of the merge commit on the target branch |
 | Link PR `l` (task view) | Lists PRs you created across the org's projects and adds the chosen one as a `Pull Request` link |
 | Create bug `b` | Same as `a`, but creates a `Bug` |
-| Toggle done `d` | Moves the work item to the last column, or back to the first |
+| Toggle done `d` | Asks for confirmation, then moves the work item to the last column, or back to the first |
 | Edit title `e` | PATCH `System.Title` in ADO |
 | Refresh `r` | Re-fetches entire sprint |
 | `:adocolumns [board]` | Re-reads the Kanban board columns and rebuilds the lanes |
