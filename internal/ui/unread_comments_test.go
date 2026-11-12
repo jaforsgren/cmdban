@@ -74,12 +74,12 @@ func TestOwnCommentOnOtherWorkItemIsMarkedRead(t *testing.T) {
 	}
 }
 
-func TestTypesSectionListsUnreadCommentsKey(t *testing.T) {
+func TestFiltersSectionListsUnreadCommentsKey(t *testing.T) {
 	m := unreadTestModel(t)
 
-	section := strings.Join(m.buildTypeFilterSection(), "\n")
+	section := strings.Join(m.buildFilterSection(), "\n")
 	if !strings.Contains(section, "<8>") || !strings.Contains(section, "unread (1)") {
-		t.Fatalf("TYPES section = %q, want the <8> unread (1) row", section)
+		t.Fatalf("FILTERS section = %q, want the <8> unread (1) row", section)
 	}
 }
 

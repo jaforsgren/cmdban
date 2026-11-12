@@ -15,14 +15,15 @@ import (
 // across syncs; types outside this list follow alphabetically.
 var preferredWorkItemTypeOrder = []string{"User Story", "Bug", "Task", "Feature", "Epic"}
 
-// Number keys for the type filter: 0 is the default stories-and-bugs view,
-// 1–7 pick a single type, 8 shows cards with unread comments and 9 shows
-// every type.
+// Number keys for the filters: 0 is the default stories-and-bugs view, 1–6
+// pick a single type, 7 toggles unassigned cards (like U), 8 shows cards
+// with unread comments and 9 shows every type.
 const (
 	typeFilterKeyDefault        = 0
+	typeFilterKeyUnassigned     = 7
 	typeFilterKeyUnreadComments = 8
 	typeFilterKeyAllTypes       = 9
-	maxTypeFilterTypes          = typeFilterKeyUnreadComments - 1
+	maxTypeFilterTypes          = typeFilterKeyUnassigned - 1
 )
 
 type typeFilterKind int
@@ -100,6 +101,8 @@ func (m Model) selectTypeFilter(digit string) (tea.Model, tea.Cmd) {
 		m.typeFilter = typeFilter{kind: typeFilterDefault}
 	case index == typeFilterKeyAllTypes:
 		m.typeFilter = typeFilter{kind: typeFilterAllTypes}
+	case index == typeFilterKeyUnassigned:
+		return m.toggleUnassigned()
 	case index == typeFilterKeyUnreadComments:
 		m.typeFilter = typeFilter{kind: typeFilterUnreadComments}
 	case index > len(types):

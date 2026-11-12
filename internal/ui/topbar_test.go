@@ -201,20 +201,20 @@ func TestTopBarKeepsFixedHeightAndShowsSections(t *testing.T) {
 	if got := lipgloss.Height(bar); got != topBarHeight {
 		t.Fatalf("topbar height = %d, want %d", got, topBarHeight)
 	}
-	for _, want := range []string{"CONTEXT", "RECENT", "TYPES", "SHORTCUTS", "<1>", "User Story", "Stories"} {
+	for _, want := range []string{"CONTEXT", "RECENT", "FILTERS", "SHORTCUTS", "<1>", "User Story", "Stories"} {
 		if !strings.Contains(bar, want) {
 			t.Errorf("topbar missing %q:\n%s", want, bar)
 		}
 	}
 }
 
-func TestTopBarOmitsTypesOnLocalBoard(t *testing.T) {
+func TestTopBarOmitsFiltersOnLocalBoard(t *testing.T) {
 	cfg := adoTestConfig()
 	cfg.CurrentBoard = "local"
 	m := adoTestModel(cfg)
 
-	if bar := m.renderTopBar(); strings.Contains(bar, "TYPES") {
-		t.Fatalf("local board topbar should not show TYPES:\n%s", bar)
+	if bar := m.renderTopBar(); strings.Contains(bar, "FILTERS") {
+		t.Fatalf("local board topbar should not show FILTERS:\n%s", bar)
 	}
 }
 
@@ -227,17 +227,17 @@ func TestViewFillsTerminalHeight(t *testing.T) {
 }
 
 func TestContextualShortcutsIncludeADOKeysOnlyOnADOBoards(t *testing.T) {
-	hasTypeFilter := func(shortcuts []shortcut) bool {
-		return slices.ContainsFunc(shortcuts, func(s shortcut) bool { return s.key == "0/1-8/9" })
+	hasNewBug := func(shortcuts []shortcut) bool {
+		return slices.ContainsFunc(shortcuts, func(s shortcut) bool { return s.key == "b" })
 	}
 
-	if !hasTypeFilter(adoTestModel(adoTestConfig()).contextualShortcuts()) {
-		t.Fatal("ADO board shortcuts should include the type filter")
+	if !hasNewBug(adoTestModel(adoTestConfig()).contextualShortcuts()) {
+		t.Fatal("ADO board shortcuts should include new bug")
 	}
 	cfg := adoTestConfig()
 	cfg.CurrentBoard = "local"
-	if hasTypeFilter(adoTestModel(cfg).contextualShortcuts()) {
-		t.Fatal("local board shortcuts should not include the type filter")
+	if hasNewBug(adoTestModel(cfg).contextualShortcuts()) {
+		t.Fatal("local board shortcuts should not include new bug")
 	}
 }
 
@@ -601,5 +601,70 @@ func TestEnterOnBoardOpensCardAndQReturnsToBoard(t *testing.T) {
 
 	if m.mode != ModeNormal {
 		t.Fatalf("mode = %v after q, want ModeNormal", m.mode)
+	}
+}
+
+func TestFiltersSectionListsEveryNumberKeyType(t *testing.T) {
+	m := adoTestModel(adoTestConfig())
+	for i, workItemType := range []string{"Feature", "Epic"} {
+		m.board.AddTask(&task.Task{ID: workItemType, Title: workItemType, Status: "todo", ADOWorkItemType: workItemType, ADOItemID: 10 + i})
+	}
+
+	section := strings.Join(m.buildFilterSection(), "\n")
+	for _, want := range []string{"<0>", "<1>", "<6>", "Risk", "<8>", "<9>"} {
+		if !strings.Contains(section, want) {
+			t.Errorf("FILTERS section missing %q:\n%s", want, section)
+		}
+	}
+	if strings.Contains(section, "more") {
+		t.Errorf("FILTERS section hides types reachable by a number key:\n%s", section)
+	}
+}
+
+func TestFiltersSectionShowsUnassignedOnAssignedToMeBoards(t *testing.T) {
+	cfg := adoTestConfig()
+	m := adoTestModel(cfg)
+	if strings.Contains(strings.Join(m.buildFilterSection(), "\n"), "<7>") {
+		t.Fatal("FILTERS section lists <7> unassigned on a board without assigned-to-me")
+	}
+
+	cfg.Boards[1].AzureDevOps.AssignedToMe = true
+	if !strings.Contains(strings.Join(m.buildFilterSection(), "\n"), "<7>") {
+		t.Fatal("FILTERS section lacks <7> unassigned on an assigned-to-me board")
+	}
+}
+
+func TestUnassignedNumberKeyTogglesUnassigned(t *testing.T) {
+	cfg := adoTestConfig()
+	cfg.Boards[1].AzureDevOps.AssignedToMe = true
+	m := adoTestModel(savableConfig(t, cfg))
+
+	m = pressKey(t, m, "7")
+
+	if !m.config.ActiveBoard().AzureDevOps.IncludeUnassigned {
+		t.Fatal("key 7 did not toggle unassigned cards on")
+	}
+}
+
+func TestTopBarShortcutsOmitNavigationKeys(t *testing.T) {
+	m := adoTestModel(adoTestConfig())
+
+	for _, sc := range m.contextualShortcuts() {
+		if slices.Contains(topBarOmittedShortcutKeys, sc.key) {
+			t.Errorf("topbar shortcuts include omitted key %q", sc.key)
+		}
+	}
+}
+
+func TestMinimizedLaneShowsFourCharacterLabel(t *testing.T) {
+	m := adoTestModel(adoTestConfig())
+
+	lane := m.renderLane(1, "review", minimizedLaneWidth, true)
+
+	if !strings.Contains(lane, "REVI") || strings.Contains(lane, "REVIEW") {
+		t.Fatalf("minimized lane = %q, want the label cut to REVI", lane)
+	}
+	if got, want := lipgloss.Width(lane), minimizedLaneWidth+minimizedLaneBorderCols; got != want {
+		t.Fatalf("minimized lane width = %d, want %d", got, want)
 	}
 }

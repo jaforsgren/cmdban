@@ -82,7 +82,7 @@ func (m Model) renderTopBar() string {
 		topBarSection("RECENT", m.buildRecentBoardsSection()),
 	}
 	if m.config.IsADOBoard() {
-		sections = append(sections, topBarSection("TYPES", m.buildTypeFilterSection()))
+		sections = append(sections, topBarSection("FILTERS", m.buildFilterSection()))
 	}
 	used := topBarPaddingCols
 	for _, section := range sections {
@@ -279,45 +279,45 @@ func (m Model) buildRecentBoardsSection() []string {
 	return append(lines, topBarDimStyle.Render("<ctrl+n> next"))
 }
 
-// typeFilterFixedRows are the default, unread comments and all-types rows
-// that bracket the per-type rows in the TYPES section.
-const typeFilterFixedRows = 3
-
-// The TYPES section marks the active filter with an arrow rather than the
+// The FILTERS section marks the active filter with an arrow rather than the
 // ●/○ markers used elsewhere, which would read as the Bug glyph.
 const (
 	typeFilterActiveMarker   = "▸ "
 	typeFilterInactiveMarker = "  "
 )
 
-// buildTypeFilterSection lists the number key for the default view, every
-// work item type on the board (with its glyph as a legend), unread comments
-// and all types, marking the active filter, with a "+N more" row when the
-// types don't all fit.
-func (m Model) buildTypeFilterSection() []string {
+// buildFilterSection lays the number keys out in two columns: the default
+// view and every work item type (with its glyph as a legend), then the
+// unassigned toggle, unread comments, all types and a "+N more" row for
+// types beyond the number keys. The active filter is marked.
+func (m Model) buildFilterSection() []string {
 	defaultGlyphs := ""
 	for _, workItemType := range defaultViewTypes {
 		defaultGlyphs += renderTypeGlyph(workItemType)
 	}
-	lines := []string{m.typeFilterLine(typeFilterKeyDefault, defaultGlyphs, "stories & bugs", m.typeFilter.kind == typeFilterDefault)}
+	typeColumn := []string{m.typeFilterLine(typeFilterKeyDefault, defaultGlyphs, "stories & bugs", m.typeFilter.kind == typeFilterDefault)}
 
 	types := m.workItemTypes()
 	shown := types[:min(len(types), maxTypeFilterTypes)]
-	typeRows := topBarSectionRows - typeFilterFixedRows
-	if len(shown) > typeRows {
-		shown = shown[:typeRows-1]
-	}
 	for i, workItemType := range shown {
 		label := fmt.Sprintf("%s (%d)", workItemType, m.workItemTypeCount(workItemType))
 		active := m.typeFilter.kind == typeFilterSingle && m.typeFilter.workItemType == workItemType
-		lines = append(lines, m.typeFilterLine(i+1, renderTypeGlyph(workItemType), label, active))
+		typeColumn = append(typeColumn, m.typeFilterLine(i+1, renderTypeGlyph(workItemType), label, active))
 	}
-	if len(shown) < len(types) {
-		lines = append(lines, topBarDimStyle.Render(fmt.Sprintf("+%d more", len(types)-len(shown))))
+
+	var viewColumn []string
+	if adoCfg := m.config.ActiveBoard().AzureDevOps; adoCfg.AssignedToMe {
+		viewColumn = append(viewColumn, m.typeFilterLine(typeFilterKeyUnassigned, "", "unassigned", adoCfg.IncludeUnassigned))
 	}
 	unreadLabel := fmt.Sprintf("unread (%d)", m.unreadCommentsTaskCount())
-	lines = append(lines, m.typeFilterLine(typeFilterKeyUnreadComments, strings.TrimSpace(unreadCommentsMarker), unreadLabel, m.typeFilter.kind == typeFilterUnreadComments))
-	return append(lines, m.typeFilterLine(typeFilterKeyAllTypes, "", "all types", m.typeFilter.kind == typeFilterAllTypes))
+	viewColumn = append(viewColumn,
+		m.typeFilterLine(typeFilterKeyUnreadComments, strings.TrimSpace(unreadCommentsMarker), unreadLabel, m.typeFilter.kind == typeFilterUnreadComments),
+		m.typeFilterLine(typeFilterKeyAllTypes, "", "all types", m.typeFilter.kind == typeFilterAllTypes),
+	)
+	if len(shown) < len(types) {
+		viewColumn = append(viewColumn, topBarDimStyle.Render(fmt.Sprintf("+%d more", len(types)-len(shown))))
+	}
+	return sideBySide([][]string{typeColumn, viewColumn}, topBarShortcutsGap)
 }
 
 func (m Model) typeFilterLine(index int, glyphs, label string, active bool) string {
@@ -340,42 +340,77 @@ func (m Model) buildShortcutsDisplay(width int) []string {
 		formatted[i] = topBarKeyStyle.Render("<"+sc.key+">") + " " + topBarDimStyle.Render(sc.desc)
 	}
 
-	rows := make([]string, min(len(formatted), topBarSectionRows))
+	var columns [][]string
 	used := 0
 	for start := 0; start < len(formatted); start += topBarSectionRows {
 		column := formatted[start:min(start+topBarSectionRows, len(formatted))]
-		columnW := columnWidth(column)
 		gap := 0
 		if start > 0 {
 			gap = topBarShortcutsGap
 		}
-		if used+gap+columnW > width {
+		if used+gap+columnWidth(column) > width {
 			break
 		}
-		for i := range column {
-			rows[i] += strings.Repeat(" ", used+gap-lipgloss.Width(rows[i])) + column[i]
+		columns = append(columns, column)
+		used += gap + columnWidth(column)
+	}
+	return sideBySide(columns, topBarShortcutsGap)
+}
+
+// sideBySide joins columns of lines into rows, padding each column to its
+// widest line and separating them by gap spaces.
+func sideBySide(columns [][]string, gap int) []string {
+	var rows []string
+	used := 0
+	for c, column := range columns {
+		if c > 0 {
+			used += gap
 		}
-		used += gap + columnW
+		for i, line := range column {
+			if i == len(rows) {
+				rows = append(rows, "")
+			}
+			rows[i] += strings.Repeat(" ", max(used-lipgloss.Width(rows[i]), 0)) + line
+		}
+		used += columnWidth(column)
 	}
 	return rows
 }
 
+// contextualShortcuts lists the current mode's keys for the topbar, leaving
+// out the ones it has no room to spare for (see topBarOmittedShortcutKeys).
 func (m Model) contextualShortcuts() []shortcut {
-	if m.mode != ModeNormal {
-		return shortcutsForMode(m.mode)
+	shortcuts := shortcutsForMode(m.mode)
+	if m.mode == ModeNormal {
+		shortcuts = slices.Concat(boardNavigationShortcuts, boardShortcuts, []shortcut{quitShortcut})
+		if m.config.IsADOBoard() {
+			shortcuts = slices.Concat(boardNavigationShortcuts, adoBoardShortcuts, boardShortcuts, []shortcut{quitShortcut})
+		}
 	}
-	if m.config.IsADOBoard() {
-		return slices.Concat(boardNavigationShortcuts, adoBoardShortcuts, boardShortcuts, []shortcut{quitShortcut})
-	}
-	return slices.Concat(boardNavigationShortcuts, boardShortcuts, []shortcut{quitShortcut})
+	return slices.DeleteFunc(slices.Clone(shortcuts), func(sc shortcut) bool {
+		return slices.Contains(topBarOmittedShortcutKeys, sc.key)
+	})
 }
 
+const (
+	laneNavigationKeys = "h/l"
+	taskNavigationKeys = "j/k"
+	topBottomKeys      = "g/G"
+	closeKey           = "q"
+	filterKeys         = "0-9"
+)
+
+// topBarOmittedShortcutKeys are left out of the topbar but kept in the help:
+// navigation is second nature, and the filter keys have their own FILTERS
+// section.
+var topBarOmittedShortcutKeys = []string{laneNavigationKeys, taskNavigationKeys, filterKeys}
+
 var (
-	quitShortcut = shortcut{"q", "quit"}
-	// boardNavigationShortcuts lead the topbar so they survive truncation on
-	// narrow terminals, followed by ADO shortcuts, then the rest.
+	quitShortcut = shortcut{closeKey, "quit"}
+	// boardNavigationShortcuts lead so they survive truncation on narrow
+	// terminals, followed by ADO shortcuts, then the rest.
 	boardNavigationShortcuts = []shortcut{
-		{"h/l", "lane"}, {"j/k", "task"}, {"H/L", "move lane"}, {"enter", "view"}, {"tab", "focus"}, {"a", "new"},
+		{laneNavigationKeys, "lane"}, {taskNavigationKeys, "task"}, {"H/L", "move lane"}, {"enter", "view"}, {"tab", "focus"}, {"a", "new"},
 	}
 	boardShortcuts = []shortcut{
 		{"e", "edit"}, {"d", "toggle done"}, {"x", "delete"}, {"t", "tag"}, {"m", "mark"}, {"/", "search"},
@@ -383,7 +418,7 @@ var (
 		{"ctrl+m", "move board"}, {":", "command"}, {"?", "help"},
 	}
 	adoBoardShortcuts = []shortcut{
-		{"b", "new bug"}, {"0/1-8/9", "type: default/one/all"}, {"U", "unassigned"}, {"v", "column/state lanes"}, {"c", "comments"}, {"ctrl+o", "open card in browser"}, {"O", "open board in browser"}, {"M", "card as markdown"},
+		{"b", "new bug"}, {filterKeys, "filters (listed in the topbar)"}, {"U", "unassigned"}, {"v", "column/state lanes"}, {"c", "comments"}, {"ctrl+o", "open card in browser"}, {"O", "open board in browser"}, {"M", "card as markdown"},
 	}
 )
 
@@ -393,7 +428,7 @@ var (
 func shortcutsForMode(mode Mode) []shortcut {
 	switch mode {
 	case ModeInput, ModeCommand, ModeADOSetup:
-		return []shortcut{{"enter", "confirm"}, {"esc", "cancel"}, {"j/k", "navigate lists"}}
+		return []shortcut{{"enter", "confirm"}, {"esc", "cancel"}, {taskNavigationKeys, "navigate lists"}}
 	case ModeTag:
 		return []shortcut{{"enter", "add tag"}, {"tab", "complete"}, {"esc", "cancel"}}
 	case ModeSearch:
@@ -401,30 +436,30 @@ func shortcutsForMode(mode Mode) []shortcut {
 	case ModeConfirm:
 		return []shortcut{{"y", "yes"}, {"n/esc", "no"}}
 	case ModeHelp:
-		return []shortcut{{"j/k", "scroll"}, {"g/G", "top/bottom"}, {"?/q", "close help"}}
+		return []shortcut{{taskNavigationKeys, "scroll"}, {topBottomKeys, "top/bottom"}, {"?/q", "close help"}}
 	case ModeView:
 		return []shortcut{
-			{"q", "back"}, {"j/k", "scroll"}, {"tab", "PRs & comments pane"}, {"J/K", "scroll comments"}, {"c", "comments view"}, {"l", "link my PR"},
+			{closeKey, "back"}, {taskNavigationKeys, "scroll"}, {"tab", "PRs & comments pane"}, {"J/K", "scroll comments"}, {"c", "comments view"}, {"l", "link my PR"},
 			{"H/L", "move lane"}, {"e", "edit"}, {"d", "toggle done"}, {"x", "delete"},
-			{"ctrl+g", "editor"}, {"M", "as markdown"}, {"ctrl+o", "open url"}, {"ctrl+m", "move board"}, {"r", "refresh"},
+			{"ctrl+g", "editor"}, {"M", "card as markdown"}, {"ctrl+o", "open card in browser"}, {"ctrl+m", "move board"}, {"r", "refresh"},
 		}
 	case ModeFocus:
 		return []shortcut{
-			{"tab/q", "exit focus"}, {"enter", "open card"}, {"j/k", "select"}, {"h/l", "lane"}, {"H/L", "move lane"}, {"a", "new"}, {"b", "new bug"}, {"e", "edit"},
-			{"t", "tag"}, {"m", "mark"}, {"c", "comments"}, {"M", "as markdown"}, {"ctrl+o", "open url"}, {"r", "refresh"},
+			{"tab/q", "exit focus"}, {"enter", "open card"}, {taskNavigationKeys, "select"}, {laneNavigationKeys, "lane"}, {"H/L", "move lane"}, {"a", "new"}, {"b", "new bug"}, {"e", "edit"},
+			{"t", "tag"}, {"m", "mark"}, {"c", "comments"}, {"M", "card as markdown"}, {"ctrl+o", "open card in browser"}, {"r", "refresh"},
 		}
 	case ModeBoardSelector:
-		return []shortcut{{"j/k", "navigate"}, {"enter", "switch"}, {"a", "new local board"}, {"A", "new ADO board"}, {"q", "close"}}
+		return []shortcut{{taskNavigationKeys, "navigate"}, {"enter", "switch"}, {"a", "new local board"}, {"A", "new ADO board"}, {closeKey, "close"}}
 	case ModeMoveBoard:
-		return []shortcut{{"j/k", "navigate"}, {"enter", "move"}, {"q", "cancel"}}
+		return []shortcut{{taskNavigationKeys, "navigate"}, {"enter", "move"}, {closeKey, "cancel"}}
 	case ModePRPicker:
-		return []shortcut{{"j/k", "navigate"}, {"enter", "link PR"}, {"q", "cancel"}}
+		return []shortcut{{taskNavigationKeys, "navigate"}, {"enter", "link PR"}, {closeKey, "cancel"}}
 	case ModePATManager:
-		return []shortcut{{"j/k", "navigate"}, {"a", "add"}, {"x", "delete"}, {"space", "reveal"}, {"q", "close"}}
+		return []shortcut{{taskNavigationKeys, "navigate"}, {"a", "add"}, {"x", "delete"}, {"space", "reveal"}, {closeKey, "close"}}
 	case ModeLogs:
-		return []shortcut{{"j/k", "scroll"}, {"g/G", "top/bottom"}, {"x", "clear"}, {"q", "close"}}
+		return []shortcut{{taskNavigationKeys, "scroll"}, {topBottomKeys, "top/bottom"}, {"x", "clear"}, {closeKey, "close"}}
 	case ModeComments:
-		return []shortcut{{"a", "add comment"}, {"j/k", "scroll"}, {"g/G", "top/bottom"}, {"q", "close"}}
+		return []shortcut{{"a", "add comment"}, {taskNavigationKeys, "scroll"}, {topBottomKeys, "top/bottom"}, {closeKey, "close"}}
 	default:
 		return nil
 	}

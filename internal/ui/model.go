@@ -27,11 +27,16 @@ import (
 )
 
 const (
-	minBodyHeight         = 5
-	moveConfirmTitleMax   = 50
-	laneBorderRows        = 2
-	detailPaneChromeRows  = 4 // border and vertical padding
-	localDetailFooterRows = 2 // status rule and footer under the markdown
+	minBodyHeight       = 5
+	moveConfirmTitleMax = 50
+	// A minimized lane shows only the first letters of its name; its width
+	// adds LaneStyle's horizontal padding around that label.
+	minimizedLaneLabelWidth = 4
+	minimizedLaneWidth      = minimizedLaneLabelWidth + 2
+	minimizedLaneBorderCols = 2
+	laneBorderRows          = 2
+	detailPaneChromeRows    = 4 // border and vertical padding
+	localDetailFooterRows   = 2 // status rule and footer under the markdown
 	// detailPaneContentInsetCols is the border plus horizontal padding of a
 	// detail pane, i.e. how much narrower its text is than the pane.
 	detailPaneContentInsetCols = 8
@@ -2182,13 +2187,8 @@ func (m Model) computeLaneWidths() []int {
 	minimizedOuterTotal := 0
 	for i, status := range m.board.Lanes {
 		if m.minimizedLanes[status] {
-			statusName := strings.ToUpper(string(status))
-			// Header text sits inside the lane's Width(width-4) box, which itself
-			// has 2 cols of horizontal padding (LaneHeaderStyle), so the text area
-			// is width-6; it must be >= len(statusName) or the header wraps.
-			w := len(statusName) + 6
-			widths[i] = w
-			minimizedOuterTotal += w + laneOverhead
+			widths[i] = minimizedLaneWidth
+			minimizedOuterTotal += minimizedLaneWidth + minimizedLaneBorderCols
 		}
 	}
 
@@ -2218,6 +2218,12 @@ func (m Model) computeLaneWidths() []int {
 	return widths
 }
 
+// minimizedLaneLabel cuts the lane name to fit a minimized lane, e.g.
+// "BACKLOG" becomes "BACK".
+func minimizedLaneLabel(statusName string) string {
+	return ansi.Truncate(statusName, minimizedLaneLabelWidth, "")
+}
+
 func (m Model) renderLane(index int, status task.Status, width int, minimized bool) string {
 	isActive := index == m.activeLane
 	allTasks := m.board.Tasks[status]
@@ -2236,7 +2242,7 @@ func (m Model) renderLane(index int, status task.Status, width int, minimized bo
 	availableHeight := max(m.bodyHeight()-laneBorderRows, minBodyHeight)
 
 	if minimized {
-		header := headerStyle.Width(width - 4).Render(statusName)
+		header := headerStyle.Padding(0).Width(minimizedLaneLabelWidth).Render(minimizedLaneLabel(statusName))
 		return laneStyle.Width(width).Height(availableHeight).Render(header)
 	}
 

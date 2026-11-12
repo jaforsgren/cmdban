@@ -175,8 +175,8 @@ See **[docs/azure-devops.md](docs/azure-devops.md)** for full setup instructions
 | Key | Action |
 |-----|--------|
 | `b` | New Bug, created like `a` (first column, assigned to you) |
-| `0` / `1`–`7` / `8` / `9` | Work item type filter: `0` (default) shows User Stories and Bugs, `1`–`7` a single type as numbered in the topbar's TYPES section, `8` cards with unread comments, `9` all types. Cards show a small type glyph: ◆ story, ● bug, ▪ task, ★ feature, ♛ epic |
-| `U` | Toggle unassigned cards from your team's area on an assigned-to-me board (saved as `include_unassigned`) |
+| `0`–`9` | Filters, listed in the topbar's FILTERS section: `0` (default) shows User Stories and Bugs, `1`–`6` a single type, `7` toggles unassigned cards (like `U`), `8` cards with unread comments, `9` all types. Cards show a small type glyph: ◆ story, ● bug, ▪ task, ★ feature, ♛ epic |
+| `U` / `7` | Toggle unassigned cards from your team's area on an assigned-to-me board (saved as `include_unassigned`) |
 | `v` | Toggle lanes between Kanban board columns and work item states |
 | `ctrl+o` | Open the selected work item in the browser |
 | `O` | Open the ADO board in the browser |
