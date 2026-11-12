@@ -16,11 +16,13 @@ import (
 var preferredWorkItemTypeOrder = []string{"User Story", "Bug", "Task", "Feature", "Epic"}
 
 // Number keys for the type filter: 0 is the default stories-and-bugs view,
-// 1–8 pick a single type and 9 shows every type.
+// 1–7 pick a single type, 8 shows cards with unread comments and 9 shows
+// every type.
 const (
-	typeFilterKeyDefault  = 0
-	typeFilterKeyAllTypes = 9
-	maxTypeFilterTypes    = typeFilterKeyAllTypes - 1
+	typeFilterKeyDefault        = 0
+	typeFilterKeyUnreadComments = 8
+	typeFilterKeyAllTypes       = 9
+	maxTypeFilterTypes          = typeFilterKeyUnreadComments - 1
 )
 
 type typeFilterKind int
@@ -29,9 +31,11 @@ const (
 	typeFilterDefault typeFilterKind = iota
 	typeFilterAllTypes
 	typeFilterSingle
+	typeFilterUnreadComments
 )
 
-// typeFilter is the active work item type selection on an ADO board.
+// typeFilter is the active work item type selection on an ADO board; the
+// unread comments view spans every type.
 type typeFilter struct {
 	kind         typeFilterKind
 	workItemType string
@@ -96,6 +100,8 @@ func (m Model) selectTypeFilter(digit string) (tea.Model, tea.Cmd) {
 		m.typeFilter = typeFilter{kind: typeFilterDefault}
 	case index == typeFilterKeyAllTypes:
 		m.typeFilter = typeFilter{kind: typeFilterAllTypes}
+	case index == typeFilterKeyUnreadComments:
+		m.typeFilter = typeFilter{kind: typeFilterUnreadComments}
 	case index > len(types):
 		m.message = fmt.Sprintf("No work item type on key %d", index)
 		return m, nil
@@ -118,6 +124,8 @@ func (m Model) typeFilterMatcher() func(*task.Task) bool {
 	switch m.typeFilter.kind {
 	case typeFilterSingle:
 		return func(t *task.Task) bool { return t.ADOWorkItemType == m.typeFilter.workItemType }
+	case typeFilterUnreadComments:
+		return m.hasUnreadComments
 	case typeFilterDefault:
 		if !m.hasDefaultViewTypes() {
 			return matchAll

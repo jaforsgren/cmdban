@@ -238,6 +238,8 @@ func (m Model) filterDescription() string {
 		parts = append(parts, "type:"+m.typeFilter.workItemType)
 	case typeFilterAllTypes:
 		parts = append(parts, "type:all")
+	case typeFilterUnreadComments:
+		parts = append(parts, "unread comments")
 	}
 	if m.searchFilter != "" {
 		parts = append(parts, "/"+m.searchFilter)
@@ -277,9 +279,9 @@ func (m Model) buildRecentBoardsSection() []string {
 	return append(lines, topBarDimStyle.Render("<ctrl+n> next"))
 }
 
-// typeFilterFixedRows are the default and all-types rows that bracket the
-// per-type rows in the TYPES section.
-const typeFilterFixedRows = 2
+// typeFilterFixedRows are the default, unread comments and all-types rows
+// that bracket the per-type rows in the TYPES section.
+const typeFilterFixedRows = 3
 
 // The TYPES section marks the active filter with an arrow rather than the
 // ●/○ markers used elsewhere, which would read as the Bug glyph.
@@ -289,8 +291,9 @@ const (
 )
 
 // buildTypeFilterSection lists the number key for the default view, every
-// work item type on the board (with its glyph as a legend) and all types,
-// marking the active filter, with a "+N more" row when they don't all fit.
+// work item type on the board (with its glyph as a legend), unread comments
+// and all types, marking the active filter, with a "+N more" row when the
+// types don't all fit.
 func (m Model) buildTypeFilterSection() []string {
 	defaultGlyphs := ""
 	for _, workItemType := range defaultViewTypes {
@@ -312,6 +315,8 @@ func (m Model) buildTypeFilterSection() []string {
 	if len(shown) < len(types) {
 		lines = append(lines, topBarDimStyle.Render(fmt.Sprintf("+%d more", len(types)-len(shown))))
 	}
+	unreadLabel := fmt.Sprintf("unread (%d)", m.unreadCommentsTaskCount())
+	lines = append(lines, m.typeFilterLine(typeFilterKeyUnreadComments, strings.TrimSpace(unreadCommentsMarker), unreadLabel, m.typeFilter.kind == typeFilterUnreadComments))
 	return append(lines, m.typeFilterLine(typeFilterKeyAllTypes, "", "all types", m.typeFilter.kind == typeFilterAllTypes))
 }
 

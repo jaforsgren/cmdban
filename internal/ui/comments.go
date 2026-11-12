@@ -104,6 +104,7 @@ func (m Model) handleCommentsLoaded(msg commentsLoadedMsg) (tea.Model, tea.Cmd) 
 	if t := m.findTaskByADOItemID(msg.workItemID); t != nil {
 		t.ADOCommentCount = len(msg.comments)
 	}
+	m.markCommentsRead(msg.workItemID, len(msg.comments))
 	return m, nil
 }
 
@@ -193,12 +194,14 @@ func (m Model) postComment(workItemID int, text string) tea.Cmd {
 
 // handleCommentAdded reloads the comments so the new one shows up; the
 // card's count is refreshed from that reload. If the user has moved on to
-// another work item, its count is bumped instead.
+// another work item, its count is bumped instead, and the user's own comment
+// is marked read.
 func (m Model) handleCommentAdded(msg commentAddedMsg) (tea.Model, tea.Cmd) {
 	m.message = "Comment posted"
 	if msg.workItemID != m.commentsWorkItemID {
 		if t := m.findTaskByADOItemID(msg.workItemID); t != nil {
 			t.ADOCommentCount++
+			m.markCommentsRead(t.ADOItemID, t.ADOCommentCount)
 		}
 		return m, nil
 	}

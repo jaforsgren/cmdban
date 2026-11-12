@@ -126,7 +126,7 @@ func TestTypeFilterKeysSelectSingleAllAndDefault(t *testing.T) {
 }
 
 func TestTypeFilterKeyBeyondTypesShowsMessage(t *testing.T) {
-	m := pressKey(t, adoTestModel(adoTestConfig()), "8")
+	m := pressKey(t, adoTestModel(adoTestConfig()), "7")
 
 	if m.typeFilter.kind != typeFilterDefault || m.message == "" {
 		t.Fatalf("typeFilter = %+v, message = %q; want the default view and an explanation", m.typeFilter, m.message)

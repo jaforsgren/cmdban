@@ -19,6 +19,7 @@ import (
 
 	"cmdban/internal/applog"
 	"cmdban/internal/azuredevops"
+	"cmdban/internal/commentread"
 	"cmdban/internal/config"
 	"cmdban/internal/markdown"
 	"cmdban/internal/pat"
@@ -78,6 +79,7 @@ type Model struct {
 	board              *task.Board
 	config             *config.Config
 	patStore           *pat.Store
+	commentReads       *commentread.Store
 	keys               KeyMap
 	textInput          textinput.Model
 	mdRenderer         *markdown.Renderer
@@ -187,10 +189,17 @@ func NewModel(cfg *config.Config) Model {
 		patStore = &pat.Store{}
 	}
 
+	logs := applog.NewBuffer()
+	commentReads, err := loadCommentReads()
+	if err != nil {
+		logs.Error("Error loading comment read state: " + err.Error())
+	}
+
 	return Model{
 		board:            task.NewBoardWithColumns(cfg.AllColumns(), cfg.HiddenColumns()),
 		config:           cfg,
 		patStore:         patStore,
+		commentReads:     commentReads,
 		keys:             DefaultKeyMap,
 		textInput:        ti,
 		mdRenderer:       mdRenderer,
@@ -199,7 +208,7 @@ func NewModel(cfg *config.Config) Model {
 		mode:             ModeNormal,
 		revealedPATIndex: -1,
 		minimizedLanes:   make(map[task.Status]bool),
-		logs:             applog.NewBuffer(),
+		logs:             logs,
 	}
 }
 
@@ -252,6 +261,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.clampSelection()
 		m.lastSyncTime = time.Now()
+		if m.config.IsADOBoard() {
+			m.observeCommentCounts(msg.tasks)
+		}
 		if m.config.IsADOBoard() && !msg.background {
 			m.message = ""
 		}
@@ -2425,6 +2437,9 @@ func (m Model) renderTask(t *task.Task, selected bool, width int, groupColor lip
 	prefix := ""
 	if t.Marked {
 		prefix = "✓ "
+	}
+	if m.hasUnreadComments(t) {
+		prefix += unreadCommentsMarker
 	}
 
 	adoBadge := ""

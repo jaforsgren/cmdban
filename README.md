@@ -175,13 +175,13 @@ See **[docs/azure-devops.md](docs/azure-devops.md)** for full setup instructions
 | Key | Action |
 |-----|--------|
 | `b` | New Bug, created like `a` (first column, assigned to you) |
-| `0` / `1`–`8` / `9` | Work item type filter: `0` (default) shows User Stories and Bugs, `1`–`8` a single type as numbered in the topbar's TYPES section, `9` all types. Cards show a small type glyph: ◆ story, ● bug, ▪ task, ★ feature, ♛ epic |
+| `0` / `1`–`7` / `8` / `9` | Work item type filter: `0` (default) shows User Stories and Bugs, `1`–`7` a single type as numbered in the topbar's TYPES section, `8` cards with unread comments, `9` all types. Cards show a small type glyph: ◆ story, ● bug, ▪ task, ★ feature, ♛ epic |
 | `U` | Toggle unassigned cards from your team's area on an assigned-to-me board (saved as `include_unassigned`) |
 | `v` | Toggle lanes between Kanban board columns and work item states |
 | `ctrl+o` | Open the selected work item in the browser |
 | `O` | Open the ADO board in the browser |
 | `M` | Open the selected work item in `$EDITOR` as markdown: title, type, lane, tags, link, description, repro steps and comments (a temporary read-only copy) |
-| `c` / `ctrl+c` | Comments view (the topbar shows the selected card's comment count) |
+| `c` / `ctrl+c` | Comments view (the topbar shows the selected card's comment count). Cards with comments added since you last opened them show 💬 before the title; opening the comments view or pane marks them read (stored in `~/.cmdban-comment-reads.yaml`, a work item's existing comments count as read the first time it syncs) |
 | `a` (in comments view) | Write a comment in `$EDITOR`; save and quit posts it as markdown, an empty file discards it |
 | `tab` (in task view) | Toggle a side pane beside the work item details: linked PRs (link, status, approvals, comment count, description excerpt, pipeline runs of the merge commit) above the comments |
 | `l` (in task view) | Link one of your own PRs (any project in the org) to the work item |

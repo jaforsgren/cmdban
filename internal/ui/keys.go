@@ -194,7 +194,7 @@ var DefaultKeyMap = KeyMap{
 	),
 	TypeFilter: key.NewBinding(
 		key.WithKeys("0", "1", "2", "3", "4", "5", "6", "7", "8", "9"),
-		key.WithHelp("0-9", "filter work item type"),
+		key.WithHelp("0-9", "filter type (8 unread comments)"),
 	),
 	ToggleLanes: key.NewBinding(
 		key.WithKeys("v"),
