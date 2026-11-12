@@ -575,3 +575,31 @@ func TestMoveFromTaskViewIntoHiddenLaneReturnsToBoard(t *testing.T) {
 		t.Fatalf("mode = %v, pane = %v; want the board once the card moved out of view", m.mode, m.viewCommentsPane)
 	}
 }
+
+func TestEnterInFocusModeOpensCardAndQReturnsToFocus(t *testing.T) {
+	m := adoTestModel(adoTestConfig())
+	m.mode = ModeFocus
+
+	got, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = got.(Model)
+	if m.mode != ModeView || m.selectedTask() == nil {
+		t.Fatalf("mode = %v after enter in focus mode, want ModeView on the selected card", m.mode)
+	}
+
+	m = pressKey(t, m, "q")
+	if m.mode != ModeFocus {
+		t.Fatalf("mode = %v after q, want back in ModeFocus", m.mode)
+	}
+}
+
+func TestEnterOnBoardOpensCardAndQReturnsToBoard(t *testing.T) {
+	m := adoTestModel(adoTestConfig())
+
+	got, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = got.(Model)
+	m = pressKey(t, m, "q")
+
+	if m.mode != ModeNormal {
+		t.Fatalf("mode = %v after q, want ModeNormal", m.mode)
+	}
+}

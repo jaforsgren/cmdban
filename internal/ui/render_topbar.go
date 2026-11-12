@@ -405,7 +405,7 @@ func shortcutsForMode(mode Mode) []shortcut {
 		}
 	case ModeFocus:
 		return []shortcut{
-			{"tab/q", "exit focus"}, {"j/k", "select"}, {"h/l", "lane"}, {"H/L", "move lane"}, {"a", "new"}, {"b", "new bug"}, {"e", "edit"},
+			{"tab/q", "exit focus"}, {"enter", "open card"}, {"j/k", "select"}, {"h/l", "lane"}, {"H/L", "move lane"}, {"a", "new"}, {"b", "new bug"}, {"e", "edit"},
 			{"t", "tag"}, {"m", "mark"}, {"c", "comments"}, {"M", "as markdown"}, {"ctrl+o", "open url"}, {"r", "refresh"},
 		}
 	case ModeBoardSelector:

@@ -110,6 +110,7 @@ type Model struct {
 	commentsWorkItemID int
 	commentsReturnMode Mode
 	viewCommentsPane   bool
+	viewReturnMode     Mode
 
 	linkedPRs           []azuredevops.PullRequestSummary
 	linkedPRsLoading    bool
@@ -610,12 +611,8 @@ func (m Model) handleNormalMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.startMoveBoard()
 
 	case key.Matches(msg, m.keys.Enter):
-		if m.selectedTask() != nil {
-			m.mode = ModeView
-			m.viewScroll = 0
-			m.gPressed = false
-		}
-		return m, nil
+		m.gPressed = false
+		return m.openTaskView()
 
 	case key.Matches(msg, m.keys.CollapseColumn):
 		lane := m.board.Lanes[m.activeLane]
@@ -784,12 +781,28 @@ func (m Model) handleConfirmMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// openTaskView shows the selected card full screen, remembering whether it
+// was opened from the board or focus mode so closing it returns there.
+func (m Model) openTaskView() (tea.Model, tea.Cmd) {
+	if m.selectedTask() == nil {
+		return m, nil
+	}
+	m.viewReturnMode = m.mode
+	m.mode = ModeView
+	m.viewScroll = 0
+	return m, nil
+}
+
+func (m *Model) closeTaskView() {
+	m.mode = m.viewReturnMode
+	m.viewScroll = 0
+	m.viewCommentsPane = false
+}
+
 func (m Model) handleViewMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case key.Matches(msg, m.keys.Escape), msg.String() == "q":
-		m.mode = ModeNormal
-		m.viewScroll = 0
-		m.viewCommentsPane = false
+		m.closeTaskView()
 		return m, nil
 
 	case key.Matches(msg, m.keys.CommentsPane):
@@ -913,6 +926,10 @@ func (m Model) handleFocusMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.viewScroll = 0
 		m.gPressed = false
 		return m, nil
+
+	case key.Matches(msg, m.keys.Enter):
+		m.gPressed = false
+		return m.openTaskView()
 
 	case key.Matches(msg, m.keys.Up):
 		m.activeTask--
@@ -1762,8 +1779,7 @@ func (m Model) applyMove(t *task.Task, lane task.Status, fromMode Mode) (tea.Mod
 	if !m.selectTask(t) {
 		m.clampSelection()
 		if fromMode == ModeView {
-			m.mode = ModeNormal
-			m.viewCommentsPane = false
+			m.closeTaskView()
 		}
 	}
 
