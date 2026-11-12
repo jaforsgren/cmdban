@@ -31,7 +31,10 @@ const (
 	laneBorderRows        = 2
 	detailPaneChromeRows  = 4 // border and vertical padding
 	localDetailFooterRows = 2 // status rule and footer under the markdown
-	footerPaddingCols     = 2
+	// detailPaneContentInsetCols is the border plus horizontal padding of a
+	// detail pane, i.e. how much narrower its text is than the pane.
+	detailPaneContentInsetCols = 8
+	footerPaddingCols          = 2
 )
 
 const (
@@ -2547,7 +2550,7 @@ func (m Model) renderTaskDetailPane(width int, footerHint, adoFooterHint string)
 		return m.renderADOTaskDetailPane(t, width, adoFooterHint)
 	}
 
-	m.mdRenderer.SetWidth(width - 8)
+	m.mdRenderer.SetWidth(width - detailPaneContentInsetCols)
 
 	content, err := os.ReadFile(t.FilePath)
 	if err != nil {
@@ -2576,7 +2579,7 @@ func (m Model) renderTaskDetailPane(width int, footerHint, adoFooterHint string)
 
 	statusLine := lipgloss.NewStyle().
 		Foreground(SubtleColor).
-		Render(strings.Repeat("─", width-8))
+		Render(strings.Repeat("─", width-detailPaneContentInsetCols))
 
 	tags := ""
 	if len(t.Tags) > 0 {
@@ -2609,6 +2612,21 @@ func (m Model) renderTaskDetailPane(width int, footerHint, adoFooterHint string)
 	)
 }
 
+// adoDetailBodyLines renders the work item's description and repro steps
+// as markdown, wrapped to width so scrolling counts the lines actually shown.
+func (m Model) adoDetailBodyLines(t *task.Task, width int) []string {
+	body := t.Description
+	if body == "" {
+		body = "*(no description)*"
+	}
+	if t.ReproSteps != "" {
+		body += "\n\n## Repro Steps\n\n" + t.ReproSteps
+	}
+	m.mdRenderer.SetWidth(width)
+	wrapped := lipgloss.NewStyle().Width(width).Render(m.mdRenderer.Render(body))
+	return strings.Split(wrapped, "\n")
+}
+
 func (m Model) renderADOTaskDetailPane(t *task.Task, width int, footerHint string) string {
 	availableHeight := m.bodyHeight() - detailPaneChromeRows
 
@@ -2616,7 +2634,7 @@ func (m Model) renderADOTaskDetailPane(t *task.Task, width int, footerHint strin
 		Render(fmt.Sprintf("#%d  %s", t.ADOItemID, t.Title))
 
 	separator := lipgloss.NewStyle().Foreground(SubtleColor).
-		Render(strings.Repeat("─", width-8))
+		Render(strings.Repeat("─", width-detailPaneContentInsetCols))
 
 	var metaParts []string
 	metaParts = append(metaParts, "Status: "+string(t.Status))
@@ -2625,16 +2643,7 @@ func (m Model) renderADOTaskDetailPane(t *task.Task, width int, footerHint strin
 	}
 	meta := lipgloss.NewStyle().Foreground(SubtleColor).Render(strings.Join(metaParts, "  ·  "))
 
-	desc := t.Description
-	if desc == "" {
-		desc = lipgloss.NewStyle().Foreground(SubtleColor).Italic(true).Render("(no description)")
-	}
-	if t.ReproSteps != "" {
-		reproHeading := lipgloss.NewStyle().Bold(true).Foreground(HighlightColor).Render("Repro Steps")
-		desc += "\n\n" + reproHeading + "\n" + t.ReproSteps
-	}
-
-	lines := strings.Split(desc, "\n")
+	lines := m.adoDetailBodyLines(t, width-detailPaneContentInsetCols)
 	if m.viewScroll >= len(lines) {
 		m.viewScroll = len(lines) - 1
 	}

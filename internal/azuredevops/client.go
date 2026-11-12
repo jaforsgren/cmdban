@@ -419,7 +419,7 @@ func (c *Client) CurrentUserUniqueName() (string, error) {
 }
 
 // FetchComments returns a work item's comments, oldest first, with HTML
-// markup stripped from the comment text.
+// comment text converted to markdown.
 func (c *Client) FetchComments(workItemID int) ([]Comment, error) {
 	url := fmt.Sprintf("%s?api-version=%s", c.commentsURL(workItemID), commentsAPIVersion)
 	var resp CommentListResponse
@@ -427,7 +427,7 @@ func (c *Client) FetchComments(workItemID int) ([]Comment, error) {
 		return nil, err
 	}
 	for i := range resp.Comments {
-		resp.Comments[i].Text = stripHTML(resp.Comments[i].Text)
+		resp.Comments[i].Text = htmlToMarkdown(resp.Comments[i].Text)
 	}
 	return resp.Comments, nil
 }

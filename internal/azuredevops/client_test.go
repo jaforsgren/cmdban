@@ -136,14 +136,6 @@ func TestHtmlizeTextEscapesAndAddsLineBreaks(t *testing.T) {
 	}
 }
 
-func TestStripHTMLRemovesTagsAndUnescapesEntities(t *testing.T) {
-	got := stripHTML("<div>Looks good &amp; ready &mdash; <b>ship it</b></div>")
-	want := "Looks good & ready — ship it"
-	if got != want {
-		t.Fatalf("stripHTML() = %q, want %q", got, want)
-	}
-}
-
 func TestCommentListResponseUnmarshal(t *testing.T) {
 	raw := `{
 		"count": 1,

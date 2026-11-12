@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/charmbracelet/lipgloss"
+
 	"cmdban/internal/azuredevops"
 	"cmdban/internal/config"
 	"cmdban/internal/task"
@@ -112,5 +114,29 @@ func TestMarkdownFileOpensInEditorAndIsRemovedAfter(t *testing.T) {
 	}
 	if !strings.Contains(got.(Model).message, "boom") {
 		t.Fatalf("message = %q, want the editor error", got.(Model).message)
+	}
+}
+
+func TestADODetailBodyRendersMarkdownWrappedToWidth(t *testing.T) {
+	m := adoTestModel(adoTestConfig())
+	tk := markdownTestTask()
+	tk.Description = "Intro **bold** " + strings.Repeat("word ", 40) + "\n\n- first\n- second"
+	const width = 40
+
+	lines := m.adoDetailBodyLines(tk, width)
+	joined := strings.Join(lines, "\n")
+
+	for _, line := range lines {
+		if got := lipgloss.Width(line); got > width {
+			t.Fatalf("line width = %d, want <= %d: %q", got, width, line)
+		}
+	}
+	for _, want := range []string{"• first", "• second", "Repro Steps", "Open app"} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("detail body missing %q:\n%s", want, joined)
+		}
+	}
+	if strings.Contains(joined, "**") || strings.Contains(joined, "## ") {
+		t.Fatalf("markdown syntax should be rendered, not shown raw:\n%s", joined)
 	}
 }

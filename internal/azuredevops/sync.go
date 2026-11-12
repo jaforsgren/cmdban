@@ -4,20 +4,12 @@ import (
 	"fmt"
 	"html"
 	"net/url"
-	"regexp"
 	"strings"
 	"time"
 
 	"cmdban/internal/config"
 	"cmdban/internal/task"
 )
-
-var htmlTagRegex = regexp.MustCompile(`<[^>]+>`)
-
-func stripHTML(s string) string {
-	s = htmlTagRegex.ReplaceAllString(s, "")
-	return html.UnescapeString(strings.TrimSpace(s))
-}
 
 func stateForLane(cfg *config.AzureDevOpsConfig, lane task.Status) string {
 	if state, ok := cfg.ColumnMap[string(lane)]; ok {
@@ -307,8 +299,8 @@ func filterFeaturesAndStories(tasks []*task.Task) []*task.Task {
 func workItemToTask(item WorkItem, cfg *config.AzureDevOpsConfig) *task.Task {
 	f := item.Fields
 	lane := laneForWorkItem(cfg, f)
-	desc := stripHTML(f.Description)
-	reproSteps := stripHTML(f.ReproSteps)
+	desc := htmlToMarkdown(f.Description)
+	reproSteps := htmlToMarkdown(f.ReproSteps)
 
 	var assignee string
 	if f.AssignedTo != nil {
@@ -412,7 +404,7 @@ func UpdateRemoteTitle(adoCfg *config.AzureDevOpsConfig, pat string, t *task.Tas
 
 // UpdateRemoteTitleAndDescription pushes an edited title and plain-text
 // description back to the work item, htmlizing the description since ADO
-// stores it as HTML (mirrors stripHTML on the read side).
+// stores it as HTML (the inverse of htmlToMarkdown on the read side, minus formatting).
 func UpdateRemoteTitleAndDescription(adoCfg *config.AzureDevOpsConfig, pat string, t *task.Task, title, description string) error {
 	if t.ADOItemID == 0 {
 		return fmt.Errorf("task %q has no ADO item ID", t.ID)
