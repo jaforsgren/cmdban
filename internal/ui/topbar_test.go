@@ -442,3 +442,36 @@ func TestToggleTopBarWorksInSidePaneButNotWhileTyping(t *testing.T) {
 		t.Fatal("T while typing a search toggled the topbar, want it typed instead")
 	}
 }
+
+func TestUnassignedToggleOnAssignedToMeBoard(t *testing.T) {
+	cfg := adoTestConfig()
+	cfg.Boards[1].AzureDevOps.AssignedToMe = true
+	m := adoTestModel(savableConfig(t, cfg))
+
+	got, cmd := m.Update(keyMsgFor("U"))
+	m = got.(Model)
+
+	if cmd == nil || !m.config.ActiveBoard().AzureDevOps.IncludeUnassigned {
+		t.Fatalf("cmd = %v, IncludeUnassigned = %v; want it on and a re-sync", cmd, m.config.ActiveBoard().AzureDevOps.IncludeUnassigned)
+	}
+	if filter := m.filterDescription(); !strings.Contains(filter, "+unassigned") || strings.Contains(filter, "(esc)") {
+		t.Fatalf("filter line = %q, want +unassigned without an esc hint", filter)
+	}
+	reloaded, err := config.Load()
+	if err != nil || !reloaded.BoardByName("sprint").AzureDevOps.IncludeUnassigned {
+		t.Fatalf("IncludeUnassigned not persisted (err = %v)", err)
+	}
+
+	m = pressKey(t, m, "U")
+	if m.config.ActiveBoard().AzureDevOps.IncludeUnassigned {
+		t.Fatal("IncludeUnassigned still on after second U")
+	}
+}
+
+func TestUnassignedToggleOnOtherBoardsShowsMessage(t *testing.T) {
+	m := pressKey(t, adoTestModel(adoTestConfig()), "U")
+
+	if m.config.ActiveBoard().AzureDevOps.IncludeUnassigned || m.message == "" {
+		t.Fatalf("IncludeUnassigned = %v, message = %q; want no change and an explanation", m.config.ActiveBoard().AzureDevOps.IncludeUnassigned, m.message)
+	}
+}

@@ -242,18 +242,34 @@ func dedupeInts(ids []int) []int {
 	return out
 }
 
+// escapeWIQLPath doubles backslashes, which WIQL string literals treat as
+// escapes, so classification paths match literally.
+func escapeWIQLPath(path string) string {
+	return strings.ReplaceAll(path, `\`, `\\`)
+}
+
 func (c *Client) FetchWorkItems(iterationPath string) ([]WorkItem, error) {
-	escapedPath := strings.ReplaceAll(iterationPath, `\`, `\\`)
-	where := fmt.Sprintf("[System.TeamProject] = '%s' AND [System.IterationPath] = '%s'", c.project, escapedPath)
+	where := fmt.Sprintf("[System.TeamProject] = '%s' AND [System.IterationPath] = '%s'", c.project, escapeWIQLPath(iterationPath))
 	return c.fetchWorkItemsByWIQL(where)
 }
 
 // FetchAssignedToMeWorkItems returns full details for every work item in the
 // project assigned to the PAT's own identity, via WIQL's @Me macro — no
 // iteration or backlog-hierarchy scoping, just "everything that's mine".
-func (c *Client) FetchAssignedToMeWorkItems() ([]WorkItem, error) {
-	where := fmt.Sprintf("[System.TeamProject] = '%s' AND [System.AssignedTo] = @Me", c.project)
-	return c.fetchWorkItemsByWIQL(where)
+// A non-empty unassignedAreaPath also includes unassigned items under that
+// area, mirroring the web board's "@Me + Unassigned" filter.
+func (c *Client) FetchAssignedToMeWorkItems(unassignedAreaPath string) ([]WorkItem, error) {
+	return c.fetchWorkItemsByWIQL(assignedToMeWhereClause(c.project, unassignedAreaPath))
+}
+
+func assignedToMeWhereClause(project, unassignedAreaPath string) string {
+	if unassignedAreaPath == "" {
+		return fmt.Sprintf("[System.TeamProject] = '%s' AND [System.AssignedTo] = @Me", project)
+	}
+	return fmt.Sprintf(
+		"[System.TeamProject] = '%s' AND ([System.AssignedTo] = @Me OR ([System.AssignedTo] = '' AND [System.AreaPath] UNDER '%s'))",
+		project, escapeWIQLPath(unassignedAreaPath),
+	)
 }
 
 func (c *Client) fetchWorkItemsByWIQL(whereClause string) ([]WorkItem, error) {

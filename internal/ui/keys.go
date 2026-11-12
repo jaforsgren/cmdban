@@ -43,6 +43,7 @@ type KeyMap struct {
 	LinkPR          key.Binding
 	LiveReload      key.Binding
 	ToggleTopBar    key.Binding
+	Unassigned      key.Binding
 	CommentsPane    key.Binding
 	CommentsDown    key.Binding
 	CommentsUp      key.Binding
@@ -196,6 +197,10 @@ var DefaultKeyMap = KeyMap{
 	NewBug: key.NewBinding(
 		key.WithKeys("b"),
 		key.WithHelp("b", "new bug (ADO)"),
+	),
+	Unassigned: key.NewBinding(
+		key.WithKeys("U"),
+		key.WithHelp("U", "toggle unassigned cards"),
 	),
 	ToggleTopBar: key.NewBinding(
 		key.WithKeys("T"),

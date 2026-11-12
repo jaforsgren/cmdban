@@ -263,3 +263,15 @@ func TestNewWorkItemPatchOperationsAssignAndPlace(t *testing.T) {
 		t.Fatalf("patchOperations() = %v, want %v", got, want)
 	}
 }
+
+func TestAssignedToMeWhereClause(t *testing.T) {
+	if got, want := assignedToMeWhereClause("proj", ""), "[System.TeamProject] = 'proj' AND [System.AssignedTo] = @Me"; got != want {
+		t.Fatalf("mine only = %q, want %q", got, want)
+	}
+
+	got := assignedToMeWhereClause("proj", `proj\Team`)
+	want := `[System.TeamProject] = 'proj' AND ([System.AssignedTo] = @Me OR ([System.AssignedTo] = '' AND [System.AreaPath] UNDER 'proj\\Team'))`
+	if got != want {
+		t.Fatalf("with unassigned = %q, want %q", got, want)
+	}
+}

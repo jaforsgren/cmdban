@@ -242,10 +242,17 @@ func (m Model) filterDescription() string {
 	if m.searchFilter != "" {
 		parts = append(parts, "/"+m.searchFilter)
 	}
+	if m.config.IsADOBoard() && m.config.ActiveBoard().AzureDevOps.IncludeUnassigned {
+		parts = append(parts, "+unassigned")
+	}
 	if len(parts) == 0 {
 		return topBarDimStyle.Render(topBarNoneLabel)
 	}
-	return topBarActiveStyle.Render(truncateName(strings.Join(parts, " "))) + topBarDimStyle.Render(" (esc)")
+	description := topBarActiveStyle.Render(truncateName(strings.Join(parts, " ")))
+	if m.hasActiveFilter() {
+		description += topBarDimStyle.Render(" (esc)")
+	}
+	return description
 }
 
 // buildRecentBoardsSection lists the most recently used boards, marking the
@@ -371,7 +378,7 @@ var (
 		{"ctrl+m", "move board"}, {":", "command"}, {"?", "help"},
 	}
 	adoBoardShortcuts = []shortcut{
-		{"b", "new bug"}, {"0/1-8/9", "type: default/one/all"}, {"v", "column/state lanes"}, {"c", "comments"}, {"ctrl+o", "open url"},
+		{"b", "new bug"}, {"0/1-8/9", "type: default/one/all"}, {"U", "unassigned"}, {"v", "column/state lanes"}, {"c", "comments"}, {"ctrl+o", "open url"},
 	}
 )
 

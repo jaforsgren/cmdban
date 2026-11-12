@@ -576,6 +576,10 @@ func (m Model) handleNormalMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.gPressed = false
 		return m, nil
 
+	case key.Matches(msg, m.keys.Unassigned):
+		m.gPressed = false
+		return m.toggleUnassigned()
+
 	case key.Matches(msg, m.keys.LiveReload):
 		m.gPressed = false
 		return m.toggleLiveReload()

@@ -140,6 +140,27 @@ func (m Model) hasActiveFilter() bool {
 	return m.searchFilter != "" || m.typeFilter.kind != typeFilterDefault
 }
 
+// toggleUnassigned adds or removes the team's unassigned work items on an
+// assigned-to-me board, then re-syncs.
+func (m Model) toggleUnassigned() (tea.Model, tea.Cmd) {
+	if !m.config.IsADOBoard() || !m.config.ActiveBoard().AzureDevOps.AssignedToMe {
+		m.message = "Unassigned toggle only applies to assigned-to-me ADO boards"
+		return m, nil
+	}
+	adoCfg := m.config.ActiveBoard().AzureDevOps
+	adoCfg.IncludeUnassigned = !adoCfg.IncludeUnassigned
+	if err := m.config.Save(); err != nil {
+		m.message = "Error saving config: " + err.Error()
+		m.logs.Error(m.message)
+		return m, nil
+	}
+	m.message = "Hiding unassigned cards — syncing..."
+	if adoCfg.IncludeUnassigned {
+		m.message = "Showing unassigned cards — syncing..."
+	}
+	return m, m.loadTasks
+}
+
 // toggleLaneMode switches a board-column ADO board between Kanban column
 // lanes and work item state lanes, then re-syncs so tasks land in the new
 // lanes.

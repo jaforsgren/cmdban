@@ -190,11 +190,19 @@ func FetchBoardTasks(adoCfg *config.AzureDevOpsConfig, pat string) ([]*task.Task
 		// Assigned-to-me boards skip iteration/backlog scoping entirely —
 		// fetch everything in the project assigned to the PAT's identity,
 		// mirroring "give me my work items" rather than walking a hierarchy.
-		items, err = client.FetchAssignedToMeWorkItems()
+		var unassignedAreaPath string
+		source = "assigned-to-me"
+		if adoCfg.IncludeUnassigned {
+			unassignedAreaPath, err = client.TeamDefaultAreaPath()
+			if err != nil {
+				return nil, SyncDiagnostics{}, fmt.Errorf("resolving team area path: %w", err)
+			}
+			source = "assigned-to-me+unassigned"
+		}
+		items, err = client.FetchAssignedToMeWorkItems(unassignedAreaPath)
 		if err != nil {
 			return nil, SyncDiagnostics{}, fmt.Errorf("fetching assigned work items: %w", err)
 		}
-		source = "assigned-to-me"
 
 	case adoCfg.BacklogLevel != "":
 		// Backlog levels list every item at that level regardless of
