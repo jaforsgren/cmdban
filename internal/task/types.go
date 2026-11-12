@@ -34,6 +34,7 @@ type Task struct {
 	ADOItemID       int
 	ADOParentID     int
 	ADOWorkItemType string
+	ADOCommentCount int
 }
 
 type Board struct {

@@ -180,7 +180,7 @@ func (c *Client) FetchBacklogWorkItemIDs(backlogID string) ([]int, error) {
 
 const workItemBatchSize = 200
 
-const workItemFields = "System.Id,System.Title,System.State,System.Description,Microsoft.VSTS.TCM.ReproSteps,System.Tags,System.WorkItemType,System.AssignedTo,System.IterationPath,System.ChangedDate,System.CreatedDate,System.Parent,System.BoardColumn"
+const workItemFields = "System.Id,System.Title,System.State,System.Description,Microsoft.VSTS.TCM.ReproSteps,System.Tags,System.WorkItemType,System.AssignedTo,System.IterationPath,System.ChangedDate,System.CreatedDate,System.Parent,System.BoardColumn,System.CommentCount"
 
 // FetchDescendantIDs returns the IDs of rootIDs plus every descendant
 // reachable by following parent→child hierarchy links, in a single WIQL

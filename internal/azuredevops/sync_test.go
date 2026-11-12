@@ -296,3 +296,13 @@ func TestPlacementForLaneInStateModeRejectsUnknownLane(t *testing.T) {
 		t.Fatal("placementForLane() error = nil, want an error for a column lane in state mode")
 	}
 }
+
+func TestWorkItemToTaskCarriesCommentCount(t *testing.T) {
+	item := WorkItem{Fields: WorkItemFields{ID: 7, State: "Active", CommentCount: 3}}
+
+	got := workItemToTask(item, boardColumnsConfig())
+
+	if got.ADOCommentCount != 3 {
+		t.Fatalf("ADOCommentCount = %d, want 3", got.ADOCommentCount)
+	}
+}

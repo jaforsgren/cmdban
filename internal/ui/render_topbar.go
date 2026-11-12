@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	topBarSectionRows   = 6 // rows under each section heading
+	topBarSectionRows   = 7 // rows under each section heading
 	topBarTitleRows     = 1
 	topBarHeadingRows   = 1
 	topBarBorderRows    = 1 // the rule under the bar
@@ -152,6 +152,9 @@ func (m Model) buildContextInfo() []string {
 	}
 
 	lines = append(lines, topBarLine("📝", "Tasks", topBarValueStyle.Render(m.taskCountDescription())))
+	if m.config.IsADOBoard() {
+		lines = append(lines, topBarLine("💬", "Comments", m.commentCountDescription()))
+	}
 	lines = append(lines, topBarLine("🔎", "Filter", m.filterDescription()))
 	return lines
 }
@@ -188,6 +191,16 @@ func (m Model) taskCountDescription() string {
 		return fmt.Sprintf("%d", total)
 	}
 	return fmt.Sprintf("%d of %d", shown, total)
+}
+
+// commentCountDescription reports the selected card's comment count from
+// the last sync.
+func (m Model) commentCountDescription() string {
+	t := m.selectedTask()
+	if t == nil {
+		return topBarDimStyle.Render(topBarNoneLabel)
+	}
+	return topBarValueStyle.Render(fmt.Sprintf("%d", t.ADOCommentCount)) + topBarDimStyle.Render(fmt.Sprintf(" on #%d (c)", t.ADOItemID))
 }
 
 func (m Model) filterDescription() string {
@@ -307,7 +320,7 @@ var (
 		{"ctrl+m", "move board"}, {":", "command"}, {"?", "help"},
 	}
 	adoBoardShortcuts = []shortcut{
-		{"0-9", "type filter"}, {"v", "column/state lanes"}, {"ctrl+o", "open url"}, {"ctrl+c", "comments"},
+		{"0-9", "type filter"}, {"v", "column/state lanes"}, {"c", "comments"}, {"ctrl+o", "open url"},
 	}
 )
 
@@ -328,13 +341,14 @@ func shortcutsForMode(mode Mode) []shortcut {
 		return []shortcut{{"j/k", "scroll"}, {"g/G", "top/bottom"}, {"?/q", "close help"}}
 	case ModeView:
 		return []shortcut{
-			{"q", "back"}, {"j/k", "scroll"}, {"H/L", "move lane"}, {"e", "edit"}, {"d", "toggle done"}, {"x", "delete"},
-			{"ctrl+g", "editor"}, {"ctrl+o", "open url"}, {"ctrl+c", "comments"}, {"ctrl+m", "move board"}, {"r", "refresh"},
+			{"q", "back"}, {"j/k", "scroll"}, {"tab", "comments pane"}, {"J/K", "scroll comments"}, {"c", "comments view"},
+			{"H/L", "move lane"}, {"e", "edit"}, {"d", "toggle done"}, {"x", "delete"},
+			{"ctrl+g", "editor"}, {"ctrl+o", "open url"}, {"ctrl+m", "move board"}, {"r", "refresh"},
 		}
 	case ModeFocus:
 		return []shortcut{
 			{"tab/q", "exit focus"}, {"j/k", "select"}, {"h/l", "lane"}, {"H/L", "move lane"}, {"a", "new"}, {"e", "edit"},
-			{"t", "tag"}, {"m", "mark"}, {"ctrl+o", "open url"}, {"ctrl+c", "comments"}, {"r", "refresh"},
+			{"t", "tag"}, {"m", "mark"}, {"c", "comments"}, {"ctrl+o", "open url"}, {"r", "refresh"},
 		}
 	case ModeBoardSelector:
 		return []shortcut{{"j/k", "navigate"}, {"enter", "switch"}, {"a", "new local board"}, {"A", "new ADO board"}, {"q", "close"}}

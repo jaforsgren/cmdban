@@ -158,7 +158,9 @@ See **[docs/azure-devops.md](docs/azure-devops.md)** for full setup instructions
 | `0`–`9` | Filter by work item type (`0` = all, numbers listed in the topbar's TYPES section) |
 | `v` | Toggle lanes between Kanban board columns and work item states |
 | `ctrl+o` | Open work item in browser |
-| `ctrl+c` | View comments |
+| `c` / `ctrl+c` | Comments view (the topbar shows the selected card's comment count) |
+| `tab` (in task view) | Toggle a comments pane beside the work item details |
+| `J` / `K` (in task view) | Scroll the comments pane |
 
 ### Commands
 

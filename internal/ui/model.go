@@ -26,10 +26,11 @@ import (
 )
 
 const (
-	minBodyHeight        = 5
-	laneBorderRows       = 2
-	detailPaneChromeRows = 6 // dialog border, padding and footer hint
-	footerPaddingCols    = 2
+	minBodyHeight         = 5
+	laneBorderRows        = 2
+	detailPaneChromeRows  = 4 // border and vertical padding
+	localDetailFooterRows = 2 // status rule and footer under the markdown
+	footerPaddingCols     = 2
 )
 
 var urlRegex = regexp.MustCompile(`https?://[^\s)\]]+`)
@@ -91,6 +92,9 @@ type Model struct {
 	commentsScroll     int
 	commentsLoading    bool
 	commentsTaskTitle  string
+	commentsWorkItemID int
+	commentsReturnMode Mode
+	viewCommentsPane   bool
 }
 
 type tasksLoadedMsg struct {
@@ -127,7 +131,8 @@ type adoEditorFinishedMsg struct {
 type configEditorFinishedMsg struct{}
 
 type commentsLoadedMsg struct {
-	comments []azuredevops.Comment
+	workItemID int
+	comments   []azuredevops.Comment
 }
 
 func NewModel(cfg *config.Config) Model {
@@ -248,17 +253,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleADOIterationsDiscovered(msg.iterations)
 
 	case commentsLoadedMsg:
-		m.commentsLoading = false
-		m.comments = msg.comments
-		return m, nil
+		return m.handleCommentsLoaded(msg)
 
 	case errMsg:
 		m.err = msg.err
 		m.message = "Error: " + msg.err.Error()
 		m.logs.Error(msg.err.Error())
-		if m.mode == ModeComments {
-			m.commentsLoading = false
-		}
+		m.commentsLoading = false
 		return m, nil
 
 	case taskOrderSavedMsg:
@@ -679,7 +680,17 @@ func (m Model) handleViewMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.Escape), msg.String() == "q":
 		m.mode = ModeNormal
 		m.viewScroll = 0
+		m.viewCommentsPane = false
 		return m, nil
+
+	case key.Matches(msg, m.keys.CommentsPane):
+		return m.toggleCommentsPane()
+
+	case key.Matches(msg, m.keys.CommentsDown):
+		return m.scrollCommentsPane(1)
+
+	case key.Matches(msg, m.keys.CommentsUp):
+		return m.scrollCommentsPane(-1)
 
 	case key.Matches(msg, m.keys.Up):
 		if m.viewScroll > 0 {
@@ -1514,39 +1525,6 @@ func (m Model) taskURL(t *task.Task) (string, bool) {
 	return match, true
 }
 
-func (m Model) openComments() (tea.Model, tea.Cmd) {
-	t := m.selectedTask()
-	if t == nil {
-		return m, nil
-	}
-	if !m.config.IsADOBoard() {
-		m.message = "Comments are only available on Azure DevOps boards"
-		return m, nil
-	}
-
-	m.mode = ModeComments
-	m.comments = nil
-	m.commentsScroll = 0
-	m.commentsLoading = true
-	m.commentsTaskTitle = t.Title
-	return m, m.fetchComments(t.ADOItemID)
-}
-
-func (m Model) fetchComments(workItemID int) tea.Cmd {
-	adoCfg := m.config.ActiveBoard().AzureDevOps
-	return func() tea.Msg {
-		token, ok := m.patStore.Get(adoCfg.PAT)
-		if !ok {
-			return errMsg{fmt.Errorf("PAT %q not found — run :pats to add it", adoCfg.PAT)}
-		}
-		comments, err := azuredevops.FetchComments(adoCfg, token, workItemID)
-		if err != nil {
-			return errMsg{err}
-		}
-		return commentsLoadedMsg{comments: comments}
-	}
-}
-
 func openURLInBrowser(url string) error {
 	var c *exec.Cmd
 	switch runtime.GOOS {
@@ -2324,10 +2302,18 @@ func (m Model) renderFooter() string {
 }
 
 const defaultDetailFooterHint = "[q: back, j/k: scroll, ctrl+g: edit in nvim, ctrl+o: open url, ctrl+c: comments]"
-const defaultADODetailFooterHint = "[q: back  H/L: move lane  e: edit title  j/k: scroll]"
+const defaultADODetailFooterHint = "[q: back  H/L: move lane  e: edit title  j/k: scroll  tab: comments  J/K: scroll comments]"
 
+// renderTaskDetail shows the selected card, with its comments beside it
+// when the comments pane is toggled on.
 func (m Model) renderTaskDetail() string {
-	return m.renderTaskDetailPane(m.width, defaultDetailFooterHint, defaultADODetailFooterHint)
+	if !m.viewCommentsPane {
+		return m.renderTaskDetailPane(m.width, defaultDetailFooterHint, defaultADODetailFooterHint)
+	}
+	commentsWidth := m.commentsSidePaneWidth()
+	detail := m.renderTaskDetailPane(m.width-commentsWidth, defaultDetailFooterHint, defaultADODetailFooterHint)
+	comments := m.renderCommentsPane(commentsWidth, lipgloss.Height(detail))
+	return lipgloss.JoinHorizontal(lipgloss.Top, detail, comments)
 }
 
 // renderTaskDetailPane renders the selected task's detail — description or
@@ -2363,7 +2349,7 @@ func (m Model) renderTaskDetailPane(width int, footerHint, adoFooterHint string)
 		m.viewScroll = 0
 	}
 
-	endLine := m.viewScroll + availableHeight
+	endLine := m.viewScroll + availableHeight - localDetailFooterRows
 	if endLine > len(lines) {
 		endLine = len(lines)
 	}

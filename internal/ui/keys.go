@@ -39,6 +39,9 @@ type KeyMap struct {
 	TypeFilter      key.Binding
 	ToggleLanes     key.Binding
 	NextRecentBoard key.Binding
+	CommentsPane    key.Binding
+	CommentsDown    key.Binding
+	CommentsUp      key.Binding
 }
 
 var DefaultKeyMap = KeyMap{
@@ -151,8 +154,8 @@ var DefaultKeyMap = KeyMap{
 		key.WithHelp("ctrl+o", "open url in browser"),
 	),
 	Comments: key.NewBinding(
-		key.WithKeys("ctrl+c"),
-		key.WithHelp("ctrl+c", "view comments"),
+		key.WithKeys("c", "ctrl+c"),
+		key.WithHelp("c", "view comments"),
 	),
 	Tag: key.NewBinding(
 		key.WithKeys("t"),
@@ -185,5 +188,17 @@ var DefaultKeyMap = KeyMap{
 	NextRecentBoard: key.NewBinding(
 		key.WithKeys("ctrl+n"),
 		key.WithHelp("ctrl+n", "next recent board"),
+	),
+	CommentsPane: key.NewBinding(
+		key.WithKeys("tab"),
+		key.WithHelp("tab", "toggle comments pane"),
+	),
+	CommentsDown: key.NewBinding(
+		key.WithKeys("J"),
+		key.WithHelp("J", "scroll comments down"),
+	),
+	CommentsUp: key.NewBinding(
+		key.WithKeys("K"),
+		key.WithHelp("K", "scroll comments up"),
 	),
 }

@@ -331,6 +331,7 @@ func workItemToTask(item WorkItem, cfg *config.AzureDevOpsConfig) *task.Task {
 		ADOItemID:       f.ID,
 		ADOParentID:     f.Parent,
 		ADOWorkItemType: f.WorkItemType,
+		ADOCommentCount: f.CommentCount,
 		CreatedAt:       createdAt,
 		UpdatedAt:       updatedAt,
 	}

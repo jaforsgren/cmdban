@@ -44,6 +44,7 @@ type WorkItemFields struct {
 	CreatedDate   string       `json:"System.CreatedDate"`
 	Parent        int          `json:"System.Parent"`
 	BoardColumn   string       `json:"System.BoardColumn"`
+	CommentCount  int          `json:"System.CommentCount"`
 }
 
 type WorkItem struct {
