@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"regexp"
 	"runtime"
+	"slices"
 	"strings"
 	"time"
 
@@ -653,6 +654,9 @@ func (m Model) handleConfirmMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.inputAction == "delete" {
 			return m.deleteTask()
 		}
+		if m.inputAction == "clear-lane" {
+			return m.clearLane()
+		}
 		m.mode = ModeNormal
 	case "n", "N", "esc":
 		m.mode = ModeNormal
@@ -1211,6 +1215,14 @@ func (m Model) handleCommand(cmd string) (tea.Model, tea.Cmd) {
 		m.mode = ModeNormal
 		return m.refreshADOBoardLayout(strings.Join(parts[1:], " "))
 
+	case "clear":
+		if lane := m.board.Lanes[m.activeLane]; len(m.board.Tasks[lane]) > 0 {
+			m.mode = ModeConfirm
+			m.inputAction = "clear-lane"
+			return m, nil
+		}
+		m.message = "Lane is already empty"
+
 	default:
 		m.message = "Unknown command: " + parts[0]
 	}
@@ -1315,6 +1327,25 @@ func (m Model) deleteTask() (tea.Model, tea.Cmd) {
 	return m, func() tea.Msg {
 		if err := task.ArchiveTask(t); err != nil {
 			return errMsg{err}
+		}
+		return taskSavedMsg{}
+	}
+}
+
+func (m Model) clearLane() (tea.Model, tea.Cmd) {
+	m.mode = ModeNormal
+	if m.config.IsADOBoard() {
+		m.message = "Use Azure DevOps to delete work items"
+		return m, nil
+	}
+	lane := m.board.Lanes[m.activeLane]
+	tasks := slices.Clone(m.board.Tasks[lane])
+
+	return m, func() tea.Msg {
+		for _, t := range tasks {
+			if err := task.ArchiveTask(t); err != nil {
+				return errMsg{err}
+			}
 		}
 		return taskSavedMsg{}
 	}
@@ -2340,6 +2371,9 @@ func (m Model) renderFooter() string {
 	}
 
 	if m.mode == ModeConfirm {
+		if m.inputAction == "clear-lane" {
+			return DialogStyle.Render("Archive all tasks in this lane? (y/n)")
+		}
 		return DialogStyle.Render("Delete task? (y/n)")
 	}
 
@@ -2560,6 +2594,7 @@ func (m Model) renderHelp() string {
   ctrl+b   board switcher       :move   move task to board
   ctrl+m   move task to board   :pats   PAT manager
                                 :logs   error/log viewer
+                                :clear  archive all in lane
                                 :adocolumns [board]  sync ADO columns
 
   Press ? or ESC to close help
