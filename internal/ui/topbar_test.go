@@ -399,3 +399,25 @@ func TestDefaultWorkItemTypeOnADOBoard(t *testing.T) {
 		t.Fatalf("defaultWorkItemType() = %q, want configured %q", got, "Task")
 	}
 }
+
+func TestToggleTopBarHidesAndPersists(t *testing.T) {
+	m := adoTestModel(savableConfig(t, adoTestConfig()))
+
+	m = pressKey(t, m, "T")
+	view := m.View()
+	if strings.Contains(view, "SHORTCUTS") {
+		t.Fatal("topbar still rendered after T")
+	}
+	if got := lipgloss.Height(view); got != testHeight {
+		t.Fatalf("View() height = %d with topbar hidden, want %d", got, testHeight)
+	}
+	reloaded, err := config.Load()
+	if err != nil || !reloaded.HideTopBar {
+		t.Fatalf("HideTopBar not persisted (err = %v)", err)
+	}
+
+	m = pressKey(t, m, "T")
+	if !strings.Contains(m.View(), "SHORTCUTS") {
+		t.Fatal("topbar not rendered after second T")
+	}
+}

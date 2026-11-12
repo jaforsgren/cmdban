@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 
@@ -48,6 +49,24 @@ var (
 	topBarKeyStyle        = lipgloss.NewStyle().Foreground(HighlightColor).Bold(true)
 	topBarLiveReloadStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#a05a5a"))
 )
+
+func (m Model) visibleTopBarHeight() int {
+	if m.config.HideTopBar {
+		return 0
+	}
+	return topBarHeight
+}
+
+// toggleTopBar shows or hides the topbar, remembering the choice in the
+// config so it survives restarts.
+func (m Model) toggleTopBar() (tea.Model, tea.Cmd) {
+	m.config.HideTopBar = !m.config.HideTopBar
+	if err := m.config.Save(); err != nil {
+		m.message = "Error saving config: " + err.Error()
+		m.logs.Error(m.message)
+	}
+	return m, nil
+}
 
 type shortcut struct {
 	key  string
@@ -348,7 +367,7 @@ var (
 	}
 	boardShortcuts = []shortcut{
 		{"e", "edit"}, {"d", "toggle done"}, {"x", "delete"}, {"t", "tag"}, {"m", "mark"}, {"/", "search"},
-		{"r", "refresh"}, {"R", "live reload"}, {".", "minimize lane"}, {"ctrl+b", "boards"}, {"ctrl+n", "next recent board"},
+		{"r", "refresh"}, {"R", "live reload"}, {"T", "toggle topbar"}, {".", "minimize lane"}, {"ctrl+b", "boards"}, {"ctrl+n", "next recent board"},
 		{"ctrl+m", "move board"}, {":", "command"}, {"?", "help"},
 	}
 	adoBoardShortcuts = []shortcut{

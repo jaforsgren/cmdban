@@ -565,6 +565,10 @@ func (m Model) handleNormalMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.gPressed = false
 		return m, nil
 
+	case key.Matches(msg, m.keys.ToggleTopBar):
+		m.gPressed = false
+		return m.toggleTopBar()
+
 	case key.Matches(msg, m.keys.LiveReload):
 		m.gPressed = false
 		return m.toggleLiveReload()
@@ -1994,12 +1998,15 @@ func (m Model) View() string {
 		return "Loading..."
 	}
 
+	if m.config.HideTopBar {
+		return lipgloss.JoinVertical(lipgloss.Left, m.renderBoard(), m.renderFooter())
+	}
 	return lipgloss.JoinVertical(lipgloss.Left, m.renderTopBar(), m.renderBoard(), m.renderFooter())
 }
 
 // bodyHeight is the number of rows left between the top bar and the footer.
 func (m Model) bodyHeight() int {
-	return max(m.height-topBarHeight-lipgloss.Height(m.renderFooter()), minBodyHeight)
+	return max(m.height-m.visibleTopBarHeight()-lipgloss.Height(m.renderFooter()), minBodyHeight)
 }
 
 func (m Model) renderBoard() string {

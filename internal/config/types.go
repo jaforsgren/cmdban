@@ -160,7 +160,8 @@ type Config struct {
 	RecentBoards []string `yaml:"recent_boards,omitempty"`
 	// LiveReloadSeconds is how often live reload re-syncs; 0 means the
 	// default.
-	LiveReloadSeconds int `yaml:"live_reload_seconds,omitempty"`
+	LiveReloadSeconds int  `yaml:"live_reload_seconds,omitempty"`
+	HideTopBar        bool `yaml:"hide_topbar,omitempty"`
 	configPath        string
 }
 

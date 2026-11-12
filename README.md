@@ -150,6 +150,7 @@ See **[docs/azure-devops.md](docs/azure-devops.md)** for full setup instructions
 | `/` | Search |
 | `r` | Refresh |
 | `ctrl+n` | Next recent board |
+| `T` | Toggle the topbar (remembered as `hide_topbar` in the config) |
 | `R` | Toggle live reload (off by default): re-syncs every 30s, or `live_reload_seconds` in the config; the topbar's Synced line turns red while on |
 
 ### Azure DevOps boards
