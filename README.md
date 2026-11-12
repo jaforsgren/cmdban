@@ -1,221 +1,80 @@
-A K9s-inspired terminal Kanban board for developers.
+# cmdban
 
-Tasks are plain markdown files. Navigate with vim-ish keybindings. Use it locally, commit tasks to git, or connect directly to Azure DevOps sprint backlogs.
+Akeyboard-driven Kanban board for the terminal, backed by plain markdown files or Azure DevOps sprints.
 
-cmdban is built around a few ideas:
+Move cards with vim motions, keep tasks as text you can grep and commit, or work your team's sprint board — read work items, follow linked PRs and pipelines, and comment — without leaving the terminal.
 
-- text files over databases
-- keyboard-first workflows
-- local-first tooling
-- fast startup and navigation
+![Board](docs/img/board.png)
 
----
+### Work your Azure DevOps sprint
 
-## Features
+Cards mirror the team's Kanban columns; moving one moves the work item. Filter by type with number keys, spot unread comments (💬, `8`), and open a work item to read its description, linked pull requests, pipeline runs and comments side by side (`tab`). Edit titles and descriptions in `$EDITOR` and post comments as markdown.
 
-- Vim-style navigation (`hjkl`, `gg`, `G`, `ctrl+u`, `ctrl+d`)
-- Tasks stored as plain markdown files
-- Configurable board columns
-- Markdown preview rendering
-- Open tasks in `$EDITOR` (`nvim` by default)
-- Multiple boards with independent task directories
-- Azure DevOps sprint backlog sync
+![Task view](docs/img/task-view.png)
 
----
+### Focus on one lane
 
-## Installation
+Read cards one after another in a single lane with the details beside the list (`tab`), and move, edit or tag them as you go.
+
+![Focus mode](docs/img/focus.png)
+
+## Install
 
 ```bash
-git clone <repo>
-cd cmdban
-make build
-make install   # optional, installs to PATH
+make build      # build ./cmdban
+make install    # copy to /usr/local/bin
 ```
 
----
-
-## Quick start
+Or build directly with Go:
 
 ```bash
-cmdban
+go build -o cmdban .
 ```
 
-- `a` — create task
-- `H` / `L` — move task between columns
-- `Enter` — open task detail
-- `?` — show all keybindings
+Run with `cmdban`. The config is created on first launch.
 
----
+## Getting started
 
-## Task format
+1. Launch the app: the default board keeps its tasks in `./tasks`. Press `a` to add a task, `H` / `L` to move it between lanes.
+2. For Azure DevOps, run `:pats` and press `a` to add a personal access token, then open the board switcher (`ctrl+b`) and press `A` for the guided board setup.
+3. Switch boards with `ctrl+b`, or cycle recent ones with `ctrl+n`. Press `?` for every shortcut.
 
-Tasks are markdown files with a metadata footer: the lines after the last `---`, one field per line.
+Tasks are markdown files with a small metadata footer — see [task format](docs/task-format.md).
 
-```markdown
-# Fix websocket reconnect bug
+## Commands and keys
 
-The reconnect handler fails after idle timeout.
+| Command | Action |
+|---|---|
+| `:b` | Board switcher |
+| `:pats` | Manage personal access tokens |
+| `:config` | Edit configuration |
+| `:adocolumns [board]` | Sync lanes from an Azure DevOps board |
+| `:logs` | Log viewer |
+| `:q` | Quit |
 
-- reproduce on staging
-- inspect retry loop
+| Key | Action |
+|---|---|
+| `h` / `l`, `j` / `k`, `enter` | Navigate and open |
+| `a` / `e` / `x` | New / edit / delete task |
+| `H` / `L` | Move task between lanes |
+| `/` | Search |
+| `0`–`9` | Azure DevOps filters (type, unassigned, unread comments) |
+| `c` | Comments |
+| `tab` | Focus mode, or the PR and comments pane in the task view |
+| `?` / `q` | Help / back or quit |
 
----
-@status today
-@priority 1
-@order 2
-@marked
-@tags backend,api
-@due 2026-08-21
-```
-
-| Field | Meaning |
-|-------|---------|
-| `@status` | Board column |
-| `@priority` | Priority (non-negative integer) |
-| `@order` | Position within the column |
-| `@marked` | Flag the card |
-| `@tags` | Comma-separated tags |
-
-Any other `@key value` line or bare `@flag` (like `@due` above) is kept as-is when cmdban rewrites the file, so metadata added by hand or by a newer cmdban is never lost. Files are written atomically (temp file, fsync, rename).
-
-The older single-line footer (`@status:today @order:2 @marked @backend`, where bare `@word`s are tags) is still read; a card switches to the line format the next time cmdban saves it.
-
-Default columns: `today`, `tomorrow`, `backlog`, `done`.
-
----
+See [all commands and shortcuts](docs/commands-and-keys.md).
 
 ## Configuration
 
-Stored in `~/.cmdban.yaml`. Open it from inside cmdban with `:config`.
+Configuration is stored in `~/.cmdban.yaml`. Use `:config` to edit it in `$EDITOR` (`nvim` by default).
 
-```yaml
-current_board: personal
-
-boards:
-  - name: personal
-    directory: ~/tasks/personal
-    columns:
-      - name: today
-      - name: tomorrow
-      - name: backlog
-      - name: done
-
-  - name: work
-    directory: ~/tasks/work
-    columns:
-      - name: in-progress
-      - name: review
-      - name: blocked
-      - name: done
-```
-
----
-
-## Boards
-
-Open the board switcher with `:b` or `ctrl+b`. The topbar's RECENT section lists the last four boards you used; `ctrl+n` cycles through them.
-
-| Key | Action |
-|-----|--------|
-| `j` / `k` | Navigate |
-| `Enter` | Switch to board |
-| `a` | New local board |
-| `A` | New Azure DevOps board (guided setup) |
-| `q` / `Esc` | Close |
-
----
-
-## Azure DevOps
-
-cmdban can connect to ADO sprint backlogs. Work items appear as cards and changes (moves, new tasks, title edits) sync back via the REST API.
-
-See **[docs/azure-devops.md](docs/azure-devops.md)** for full setup instructions, including:
-
-- creating and storing PATs (`:pats`)
-- the interactive board setup wizard (`A` in the board switcher)
-- manual config reference
-- column state mapping
-- troubleshooting
-
----
-
-## Keybindings
-
-### Navigation
-
-| Key | Action |
-|-----|--------|
-| `h` / `l` | Left / right lane |
-| `j` / `k` | Up / down |
-| `gg` | Top of lane |
-| `G` | Bottom of lane |
-| `ctrl+u` / `ctrl+f` | Half page up / down |
-
-### Task actions
-
-| Key | Action |
-|-----|--------|
-| `Enter` | View task |
-| `a` | New task |
-| `e` / `i` | Edit title |
-| `d` | Toggle done |
-| `t` | Add tag |
-| `x` / `ctrl+d` | Delete task |
-| `H` / `L` | Move task left / right |
-| `ctrl+k` / `ctrl+j` | Reorder task up / down |
-| `m` | Mark task |
-| `/` | Search |
-| `r` | Refresh |
-| `ctrl+n` | Next recent board |
-| `T` | Toggle the topbar (remembered as `hide_topbar` in the config) |
-| `R` | Toggle live reload (off by default): re-syncs every 30s, or `live_reload_seconds` in the config; the topbar's Synced line turns red while on |
-
-### Azure DevOps boards
-
-| Key | Action |
-|-----|--------|
-| `b` | New Bug, created like `a` (first column, assigned to you) |
-| `0`–`9` | Filters, listed in the topbar's FILTERS section: `0` (default) shows User Stories and Bugs, `1`–`6` a single type, `7` toggles unassigned cards (like `U`), `8` cards with unread comments, `9` all types. Cards show a small type glyph: ◆ story, ● bug, ▪ task, ★ feature, ♛ epic |
-| `U` / `7` | Toggle unassigned cards from your team's area on an assigned-to-me board (saved as `include_unassigned`) |
-| `v` | Toggle lanes between Kanban board columns and work item states |
-| `ctrl+o` | Open the selected work item in the browser |
-| `O` | Open the ADO board in the browser |
-| `M` | Open the selected work item in `$EDITOR` as markdown: title, type, lane, tags, link, description, repro steps and comments (a temporary read-only copy) |
-| `c` / `ctrl+c` | Comments view (the topbar shows the selected card's comment count). Cards with comments added since you last opened them show 💬 before the title; opening the comments view or pane marks them read (stored in `~/.cmdban-comment-reads.yaml`, a work item's existing comments count as read the first time it syncs) |
-| `a` (in comments view) | Write a comment in `$EDITOR`; save and quit posts it as markdown, an empty file discards it |
-| `tab` (in task view) | Toggle a side pane beside the work item details: linked PRs (link, status, approvals, comment count, description excerpt, pipeline runs of the merge commit) above the comments |
-| `l` (in task view) | Link one of your own PRs (any project in the org) to the work item |
-| `J` / `K` (in task view) | Scroll the comments pane |
-
-### Commands
-
-| Command | Action |
-|---------|--------|
-| `:` | Command mode |
-| `:b` | Board switcher |
-| `:pats` / `:p` | PAT manager |
-| `:config` / `:c` | Open config in editor |
-| `:set dir <path>` | Set task directory |
-| `:adocolumns [board]` | Sync lanes from an ADO Kanban board |
-| `:q` | Quit |
-| `?` | All shortcuts and commands |
-
----
-
-## Environment variables
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `EDITOR` | `nvim` | Editor for opening tasks |
-
----
+See [configuration](docs/configuration.md) for boards, columns and other options, and [Azure DevOps](docs/azure-devops.md) for connecting a sprint board.
 
 ## Development
 
 ```bash
-make build
-make run
-make test
-make lint
+make test    # all tests, verbose
+make lint    # golangci-lint
 make tidy
 ```
