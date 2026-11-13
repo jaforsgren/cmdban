@@ -2448,9 +2448,17 @@ func (m Model) renderTask(t *task.Task, selected bool, width int, groupColor lip
 		prefix += unreadCommentsMarker
 	}
 
+	// Inline segments must carry the card's background: their trailing ANSI
+	// reset would otherwise clear the selection highlight behind them.
+	metaColor := SubtleColor
+	if selected {
+		metaColor = SelectedMetaColor
+	}
+	metaStyle := lipgloss.NewStyle().Foreground(metaColor).Background(style.GetBackground())
+
 	adoBadge := ""
 	if t.ADOItemID > 0 {
-		adoBadge = lipgloss.NewStyle().Foreground(SubtleColor).Render(fmt.Sprintf(" #%d", t.ADOItemID))
+		adoBadge = metaStyle.Render(fmt.Sprintf(" #%d", t.ADOItemID))
 	}
 
 	title := prefix + t.Title
@@ -2464,16 +2472,12 @@ func (m Model) renderTask(t *task.Task, selected bool, width int, groupColor lip
 		for i, tag := range t.Tags {
 			tagStrs[i] = "@" + tag
 		}
-		tags = lipgloss.NewStyle().
-			Foreground(SubtleColor).
-			Render(" " + strings.Join(tagStrs, " "))
+		tags = metaStyle.Render(" " + strings.Join(tagStrs, " "))
 	}
 
 	var checkboxCounter string
 	if t.CheckboxTotal > 0 {
-		checkboxCounter = lipgloss.NewStyle().
-			Foreground(SubtleColor).
-			Render(fmt.Sprintf(" %d/%d", t.CheckboxDone, t.CheckboxTotal))
+		checkboxCounter = metaStyle.Render(fmt.Sprintf(" %d/%d", t.CheckboxDone, t.CheckboxTotal))
 	}
 
 	box := style.Width(contentWidth).Render(title + adoBadge + tags + checkboxCounter)

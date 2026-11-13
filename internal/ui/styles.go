@@ -10,6 +10,8 @@ var (
 	BorderColor    = lipgloss.Color("#3C3C3C")
 	ActiveColor    = lipgloss.Color("#db6a39")
 	InactiveColor  = lipgloss.Color("#7a7a7a")
+	// SelectedMetaColor keeps card metadata readable on the ActiveColor highlight.
+	SelectedMetaColor = lipgloss.Color("#f5d6c6")
 )
 
 var (
