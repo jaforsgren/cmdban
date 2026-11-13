@@ -153,7 +153,7 @@ iteration: "Platform\\Sprint 42"
 
 Maps each cmdban lane to a Kanban board column, plus the state each work item type must be in for that column. Several columns can share a state (In progress and Review are both `Active` above), which is why cmdban tracks the column itself rather than the state:
 
-- **Reading** — a card's lane comes from `System.BoardColumn`. Items that aren't on this board (other teams' boards, or types such as Task) fall back to the first column whose state mapping matches, then to the first column.
+- **Reading** — a card's lane comes from `board_column_field`, the same field moves write. `System.BoardColumn` is only used when that field is missing, since it reflects the board of the team owning the item's area path, not necessarily this board. Items that aren't on this board (types such as Task) fall back to the first column whose state mapping matches, then to the first column.
 - **Moving** — cmdban writes both `board_column_field` and the mapped `System.State`. Moving a work item type that the board doesn't carry fails with an error.
 
 ### `column_map` (legacy)

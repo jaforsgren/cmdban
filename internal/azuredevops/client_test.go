@@ -259,3 +259,44 @@ func TestAssignedToMeWhereClause(t *testing.T) {
 		t.Fatalf("with unassigned = %q, want %q", got, want)
 	}
 }
+
+func TestWorkItemFieldsUnmarshalCapturesKanbanColumns(t *testing.T) {
+	data := []byte(`{"System.Id":7,"System.BoardColumn":"In Progress","WEF_A_Kanban.Column":"Review","WEF_A_Kanban.Column.Done":false,"WEF_B_Kanban.Column":"In Progress"}`)
+
+	var fields WorkItemFields
+	if err := json.Unmarshal(data, &fields); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+
+	if fields.ID != 7 || fields.BoardColumn != "In Progress" {
+		t.Fatalf("standard fields = %+v, want ID 7 and BoardColumn %q", fields, "In Progress")
+	}
+	want := map[string]string{"WEF_A_Kanban.Column": "Review", "WEF_B_Kanban.Column": "In Progress"}
+	if len(fields.KanbanColumns) != len(want) {
+		t.Fatalf("KanbanColumns = %v, want %v", fields.KanbanColumns, want)
+	}
+	for name, column := range want {
+		if fields.KanbanColumns[name] != column {
+			t.Fatalf("KanbanColumns[%q] = %q, want %q", name, fields.KanbanColumns[name], column)
+		}
+	}
+}
+
+func TestWorkItemFieldsBoardColumnFallsBackToSystemBoardColumn(t *testing.T) {
+	fields := WorkItemFields{BoardColumn: "In Progress"}
+
+	if got := fields.boardColumn(testColumnField); got != "In Progress" {
+		t.Fatalf("boardColumn() = %q, want %q", got, "In Progress")
+	}
+}
+
+func TestWorkItemFieldListAppendsExtraFields(t *testing.T) {
+	if got := workItemFieldList(nil); got != workItemFields {
+		t.Fatalf("workItemFieldList(nil) = %q, want the standard fields", got)
+	}
+
+	want := workItemFields + "," + testColumnField
+	if got := workItemFieldList([]string{testColumnField}); got != want {
+		t.Fatalf("workItemFieldList() = %q, want %q", got, want)
+	}
+}

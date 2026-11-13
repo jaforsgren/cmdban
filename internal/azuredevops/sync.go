@@ -26,13 +26,13 @@ func laneForState(cfg *config.AzureDevOpsConfig, state string) task.Status {
 	return task.StatusBacklog
 }
 
-// laneForBoardColumn resolves a work item's lane from its Kanban column.
-// Items not on the configured board (other teams' boards, or types the board
+// laneForBoardColumn resolves a work item's lane from its column on the
+// configured board, which is where moves write it. Items not on the configured board (other teams' boards, or types the board
 // doesn't carry) fall back to the first column whose state mapping matches,
 // then to the board's first column so they never vanish from the view.
 func laneForBoardColumn(cfg *config.AzureDevOpsConfig, f WorkItemFields) task.Status {
 	for _, bc := range cfg.BoardColumns {
-		if strings.EqualFold(bc.Column, f.BoardColumn) {
+		if strings.EqualFold(bc.Column, f.boardColumn(cfg.BoardColumnField)) {
 			return task.Status(bc.Lane)
 		}
 	}
@@ -169,6 +169,7 @@ type SyncDiagnostics struct {
 
 func FetchBoardTasks(adoCfg *config.AzureDevOpsConfig, pat string) ([]*task.Task, SyncDiagnostics, error) {
 	client := NewClient(adoCfg.Org, adoCfg.Project, adoCfg.Team, pat)
+	extraFields := boardFetchFields(adoCfg)
 
 	var (
 		items         []WorkItem
@@ -191,7 +192,7 @@ func FetchBoardTasks(adoCfg *config.AzureDevOpsConfig, pat string) ([]*task.Task
 			}
 			source = "assigned-to-me+unassigned"
 		}
-		items, err = client.FetchAssignedToMeWorkItems(unassignedAreaPath)
+		items, err = client.FetchAssignedToMeWorkItems(unassignedAreaPath, extraFields...)
 		if err != nil {
 			return nil, SyncDiagnostics{}, fmt.Errorf("fetching assigned work items: %w", err)
 		}
@@ -210,7 +211,7 @@ func FetchBoardTasks(adoCfg *config.AzureDevOpsConfig, pat string) ([]*task.Task
 		if err != nil {
 			return nil, SyncDiagnostics{}, fmt.Errorf("fetching backlog work items: %w", err)
 		}
-		items, err = client.FetchWorkItemsByIDs(ids)
+		items, err = client.FetchWorkItemsByIDs(ids, extraFields...)
 		if err != nil {
 			return nil, SyncDiagnostics{}, fmt.Errorf("fetching work item details: %w", err)
 		}
@@ -221,7 +222,7 @@ func FetchBoardTasks(adoCfg *config.AzureDevOpsConfig, pat string) ([]*task.Task
 		if err != nil {
 			return nil, SyncDiagnostics{}, fmt.Errorf("resolving iteration: %w", err)
 		}
-		items, err = client.FetchWorkItems(iterationPath)
+		items, err = client.FetchWorkItems(iterationPath, extraFields...)
 		if err != nil {
 			return nil, SyncDiagnostics{}, fmt.Errorf("fetching work items: %w", err)
 		}
@@ -241,6 +242,16 @@ func FetchBoardTasks(adoCfg *config.AzureDevOpsConfig, pat string) ([]*task.Task
 		ReturnedCount: len(filtered),
 	}
 	return filtered, diag, nil
+}
+
+// boardFetchFields are the fields fetched beyond the standard set: the
+// configured board's column field, so lanes follow that board rather than
+// the board of whichever team owns each item's area path.
+func boardFetchFields(adoCfg *config.AzureDevOpsConfig) []string {
+	if !adoCfg.UsesBoardColumns() {
+		return nil
+	}
+	return []string{adoCfg.BoardColumnField}
 }
 
 // workItemStateRemoved marks work items taken out of scope. They map to no

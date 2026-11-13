@@ -173,6 +173,38 @@ func TestLaneForWorkItemUsesBoardColumn(t *testing.T) {
 	}
 }
 
+func TestLaneForWorkItemPrefersConfiguredBoardColumnOverAreaTeamBoard(t *testing.T) {
+	cfg := boardColumnsConfig()
+	fields := WorkItemFields{
+		WorkItemType:  "User Story",
+		State:         "Active",
+		BoardColumn:   "In Progress",
+		KanbanColumns: map[string]string{testColumnField: "Review"},
+	}
+
+	got := laneForWorkItem(cfg, fields)
+
+	if got != "review" {
+		t.Fatalf("laneForWorkItem() = %q, want %q", got, "review")
+	}
+}
+
+func TestBoardFetchFieldsIncludesColumnFieldForBoardColumnLanes(t *testing.T) {
+	got := boardFetchFields(boardColumnsConfig())
+
+	if len(got) != 1 || got[0] != testColumnField {
+		t.Fatalf("boardFetchFields() = %v, want [%s]", got, testColumnField)
+	}
+}
+
+func TestBoardFetchFieldsEmptyForLegacyBoards(t *testing.T) {
+	cfg := &config.AzureDevOpsConfig{ColumnMap: map[string]string{"active": "Active"}}
+
+	if got := boardFetchFields(cfg); got != nil {
+		t.Fatalf("boardFetchFields() = %v, want nil", got)
+	}
+}
+
 func TestLaneForWorkItemFallsBackToStateMappingOffBoard(t *testing.T) {
 	cfg := boardColumnsConfig()
 

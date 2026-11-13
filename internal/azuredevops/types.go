@@ -1,5 +1,11 @@
 package azuredevops
 
+import (
+	"encoding/json"
+	"fmt"
+	"strings"
+)
+
 type WorkItemReference struct {
 	ID  int    `json:"id"`
 	URL string `json:"url"`
@@ -45,6 +51,47 @@ type WorkItemFields struct {
 	Parent        int          `json:"System.Parent"`
 	BoardColumn   string       `json:"System.BoardColumn"`
 	CommentCount  int          `json:"System.CommentCount"`
+	// KanbanColumns holds each team board's column field (WEF_<id>_Kanban.Column)
+	// by reference name. System.BoardColumn only reflects the board of the
+	// team owning the item's area path, which differs from the configured
+	// board for items in other teams' areas.
+	KanbanColumns map[string]string `json:"-"`
+}
+
+const kanbanColumnFieldSuffix = "_Kanban.Column"
+
+func (f *WorkItemFields) UnmarshalJSON(data []byte) error {
+	type plainFields WorkItemFields
+	if err := json.Unmarshal(data, (*plainFields)(f)); err != nil {
+		return err
+	}
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	for name, value := range raw {
+		if !strings.HasSuffix(name, kanbanColumnFieldSuffix) {
+			continue
+		}
+		var column string
+		if err := json.Unmarshal(value, &column); err != nil {
+			return fmt.Errorf("decoding %s: %w", name, err)
+		}
+		if f.KanbanColumns == nil {
+			f.KanbanColumns = make(map[string]string)
+		}
+		f.KanbanColumns[name] = column
+	}
+	return nil
+}
+
+// boardColumn is the item's column on the board whose column field is
+// columnField, or System.BoardColumn when that field wasn't fetched.
+func (f WorkItemFields) boardColumn(columnField string) string {
+	if column, ok := f.KanbanColumns[columnField]; ok {
+		return column
+	}
+	return f.BoardColumn
 }
 
 type WorkItem struct {

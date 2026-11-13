@@ -187,6 +187,12 @@ const workItemBatchSize = 200
 
 const workItemFields = "System.Id,System.Title,System.State,System.Description,Microsoft.VSTS.TCM.ReproSteps,System.Tags,System.WorkItemType,System.AssignedTo,System.IterationPath,System.ChangedDate,System.CreatedDate,System.Parent,System.BoardColumn,System.CommentCount"
 
+// workItemFieldList is the fields query value: the standard fields plus
+// extraFields, such as a board's WEF Kanban column field.
+func workItemFieldList(extraFields []string) string {
+	return strings.Join(append([]string{workItemFields}, extraFields...), ",")
+}
+
 // FetchDescendantIDs returns the IDs of rootIDs plus every descendant
 // reachable by following parent→child hierarchy links, in a single WIQL
 // "work item links" tree query with MODE(Recursive) — Azure DevOps walks
@@ -248,9 +254,9 @@ func escapeWIQLPath(path string) string {
 	return strings.ReplaceAll(path, `\`, `\\`)
 }
 
-func (c *Client) FetchWorkItems(iterationPath string) ([]WorkItem, error) {
+func (c *Client) FetchWorkItems(iterationPath string, extraFields ...string) ([]WorkItem, error) {
 	where := fmt.Sprintf("[System.TeamProject] = '%s' AND [System.IterationPath] = '%s'", c.project, escapeWIQLPath(iterationPath))
-	return c.fetchWorkItemsByWIQL(where)
+	return c.fetchWorkItemsByWIQL(where, extraFields)
 }
 
 // FetchAssignedToMeWorkItems returns full details for every work item in the
@@ -258,8 +264,8 @@ func (c *Client) FetchWorkItems(iterationPath string) ([]WorkItem, error) {
 // iteration or backlog-hierarchy scoping, just "everything that's mine".
 // A non-empty unassignedAreaPath also includes unassigned items under that
 // area, mirroring the web board's "@Me + Unassigned" filter.
-func (c *Client) FetchAssignedToMeWorkItems(unassignedAreaPath string) ([]WorkItem, error) {
-	return c.fetchWorkItemsByWIQL(assignedToMeWhereClause(c.project, unassignedAreaPath))
+func (c *Client) FetchAssignedToMeWorkItems(unassignedAreaPath string, extraFields ...string) ([]WorkItem, error) {
+	return c.fetchWorkItemsByWIQL(assignedToMeWhereClause(c.project, unassignedAreaPath), extraFields)
 }
 
 func assignedToMeWhereClause(project, unassignedAreaPath string) string {
@@ -272,7 +278,7 @@ func assignedToMeWhereClause(project, unassignedAreaPath string) string {
 	)
 }
 
-func (c *Client) fetchWorkItemsByWIQL(whereClause string) ([]WorkItem, error) {
+func (c *Client) fetchWorkItemsByWIQL(whereClause string, extraFields []string) ([]WorkItem, error) {
 	wiqlURL := fmt.Sprintf("%s/_apis/wit/wiql?$top=%d&api-version=%s", c.baseURL(), workItemBatchSize, apiVersion)
 	query := fmt.Sprintf("SELECT [System.Id] FROM WorkItems WHERE %s ORDER BY [System.ChangedDate] DESC", whereClause)
 
@@ -289,12 +295,12 @@ func (c *Client) fetchWorkItemsByWIQL(whereClause string) ([]WorkItem, error) {
 	for i, ref := range wiqlResult.WorkItems {
 		ids[i] = ref.ID
 	}
-	return c.FetchWorkItemsByIDs(ids)
+	return c.FetchWorkItemsByIDs(ids, extraFields...)
 }
 
 // FetchWorkItemsByIDs fetches full work item details for an explicit list of
 // IDs, batching requests to stay under the API's per-call limit.
-func (c *Client) FetchWorkItemsByIDs(ids []int) ([]WorkItem, error) {
+func (c *Client) FetchWorkItemsByIDs(ids []int, extraFields ...string) ([]WorkItem, error) {
 	var all []WorkItem
 	for start := 0; start < len(ids); start += workItemBatchSize {
 		end := min(start+workItemBatchSize, len(ids))
@@ -305,7 +311,7 @@ func (c *Client) FetchWorkItemsByIDs(ids []int) ([]WorkItem, error) {
 		}
 		detailURL := fmt.Sprintf(
 			"%s/_apis/wit/workitems?ids=%s&fields=%s&api-version=%s",
-			c.baseURL(), strings.Join(strIDs, ","), workItemFields, apiVersion,
+			c.baseURL(), strings.Join(strIDs, ","), workItemFieldList(extraFields), apiVersion,
 		)
 		var listResp WorkItemListResponse
 		if err := c.get(detailURL, &listResp); err != nil {
