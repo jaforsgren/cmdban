@@ -50,6 +50,7 @@ const (
 	// A local board edit asks for the name, then the directory.
 	inputActionEditBoardName = "edit-board-name"
 	inputActionEditBoardDir  = "edit-board-dir"
+	inputActionRenameBoard   = "rename-board"
 )
 
 // boardEdit identifies the board being edited by its position, since board
@@ -114,7 +115,7 @@ type Model struct {
 	boardSelectorIndex int
 	moveBoardIndex     int
 	pendingBoardName   string
-	localBoardEdit     boardEdit
+	promptedBoard      boardEdit
 	// inputError explains why the open prompt rejected its value.
 	inputError         string
 	patSelectorIndex   int
@@ -717,17 +718,22 @@ func (m Model) handleInputMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "new-board-dir":
 			return m.createBoard(m.pendingBoardName, value)
 		case inputActionEditBoardName:
-			if m.rejectTakenBoardName(value, m.localBoardEdit.index) {
+			if m.rejectTakenBoardName(value, m.promptedBoard.index) {
 				return m, nil
 			}
 			m.pendingBoardName = value
 			m.inputAction = inputActionEditBoardDir
 			m.textInput.Reset()
-			m.textInput.SetValue(m.config.Boards[m.localBoardEdit.index].Directory)
+			m.textInput.SetValue(m.config.Boards[m.promptedBoard.index].Directory)
 			m.textInput.Placeholder = "Directory path..."
 			return m, textinput.Blink
 		case inputActionEditBoardDir:
 			return m.saveLocalBoardEdit(m.pendingBoardName, value)
+		case inputActionRenameBoard:
+			if m.rejectTakenBoardName(value, m.promptedBoard.index) {
+				return m, nil
+			}
+			return m.renameBoard(value)
 		case "pat-name":
 			m.pendingPATName = value
 			m.inputAction = "pat-token"
@@ -2811,6 +2817,10 @@ func (m Model) handleBoardSelectorMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.boardSelectorIndex < len(boards) {
 			return m.editBoard(m.boardSelectorIndex)
 		}
+	case "r":
+		if m.boardSelectorIndex < len(boards) {
+			return m.promptBoardName(m.boardSelectorIndex, inputActionRenameBoard)
+		}
 	case "esc", "q":
 		m.mode = ModeNormal
 	}
@@ -2825,15 +2835,41 @@ func (m Model) editBoard(index int) (tea.Model, tea.Cmd) {
 	if board.Type == config.BoardTypeAzureDevOps && board.AzureDevOps != nil {
 		return m.editADOBoard(board, edit)
 	}
-	m.localBoardEdit = edit
+	return m.promptBoardName(index, inputActionEditBoardName)
+}
+
+// promptBoardName asks for a new name for the board at index, prefilled with
+// its current one; action decides what happens with the answer.
+func (m Model) promptBoardName(index int, action string) (tea.Model, tea.Cmd) {
+	m.promptedBoard = boardEdit{index: index, name: m.config.Boards[index].Name}
 	m.mode = ModeInput
-	m.inputAction = inputActionEditBoardName
+	m.inputAction = action
 	m.textInput.Reset()
-	m.textInput.SetValue(board.Name)
+	m.textInput.SetValue(m.promptedBoard.name)
 	m.textInput.Placeholder = "Board name..."
 	m.textInput.EchoMode = textinput.EchoNormal
 	m.textInput.Focus()
 	return m, textinput.Blink
+}
+
+// renameBoard renames the prompted board without switching to it, returning
+// to the board switcher.
+func (m Model) renameBoard(name string) (tea.Model, tea.Cmd) {
+	board := m.config.Boards[m.promptedBoard.index]
+	board.Name = name
+	m.mode = ModeBoardSelector
+	if err := m.config.ReplaceBoardAt(m.promptedBoard.index, board); err != nil {
+		m.message = "Error renaming board: " + err.Error()
+		m.logs.Error(m.message)
+		return m, nil
+	}
+	if err := m.config.Save(); err != nil {
+		m.message = "Error saving config: " + err.Error()
+		m.logs.Error(m.message)
+		return m, nil
+	}
+	m.message = fmt.Sprintf("Renamed board %q to %q", m.promptedBoard.name, name)
+	return m, nil
 }
 
 // rejectTakenBoardName keeps the prompt open with an explanation when another
@@ -2847,10 +2883,10 @@ func (m *Model) rejectTakenBoardName(name string, exceptIndex int) bool {
 }
 
 func (m Model) saveLocalBoardEdit(name, directory string) (tea.Model, tea.Cmd) {
-	board := m.config.Boards[m.localBoardEdit.index]
+	board := m.config.Boards[m.promptedBoard.index]
 	board.Name = name
 	board.Directory = directory
-	if err := m.config.ReplaceBoardAt(m.localBoardEdit.index, board); err != nil {
+	if err := m.config.ReplaceBoardAt(m.promptedBoard.index, board); err != nil {
 		m.message = "Error updating board: " + err.Error()
 		m.logs.Error(m.message)
 		m.mode = ModeNormal
@@ -2981,7 +3017,7 @@ func (m Model) renderBoardSelector() string {
 
 	var rows []string
 	rows = append(rows, lipgloss.NewStyle().Bold(true).Foreground(HighlightColor).Render("  Select Board  "))
-	rows = append(rows, lipgloss.NewStyle().Foreground(SubtleColor).Render("  j/k: navigate  enter: select  a: new local  A: new ADO  e: edit  esc: cancel"))
+	rows = append(rows, lipgloss.NewStyle().Foreground(SubtleColor).Render("  j/k: navigate  enter: select  a: new local  A: new ADO  e: edit  r: rename  esc: cancel"))
 	rows = append(rows, "")
 
 	for i, b := range boards {

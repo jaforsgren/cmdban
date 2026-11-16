@@ -321,3 +321,45 @@ func TestNewLocalBoardWithTakenNameStaysOnNamePrompt(t *testing.T) {
 		t.Fatalf("action=%q error=%q, want name prompt with an error", m.inputAction, m.inputError)
 	}
 }
+
+func TestBoardSelectorRenameRenamesOnlyAndStaysInSwitcher(t *testing.T) {
+	ado := editableADOBoard()
+	m := boardSelectorModel(t, config.Board{Name: "local", Directory: "tasks"}, ado)
+	m.config.RecentBoards = []string{"team-sprint", "local"}
+
+	m = pressKey(t, m, "r")
+	if m.textInput.Value() != "team-sprint" {
+		t.Fatalf("name input = %q, want prefilled team-sprint", m.textInput.Value())
+	}
+	m.textInput.SetValue("renamed")
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = updated.(Model)
+
+	if m.mode != ModeBoardSelector {
+		t.Fatalf("mode = %v, want board switcher", m.mode)
+	}
+	got := m.config.Boards[1]
+	if got.Name != "renamed" || got.AzureDevOps.Team != ado.AzureDevOps.Team || len(got.AzureDevOps.BoardColumns) != 1 {
+		t.Fatalf("Boards[1] = %q %+v, want only the name changed", got.Name, got.AzureDevOps)
+	}
+	if m.config.CurrentBoard != "local" || m.config.RecentBoards[0] != "renamed" {
+		t.Fatalf("CurrentBoard = %q recent = %v, want local still active and recent list renamed", m.config.CurrentBoard, m.config.RecentBoards)
+	}
+	reloaded, err := config.Load()
+	if err != nil || reloaded.Boards[1].Name != "renamed" {
+		t.Fatalf("rename not persisted (err = %v)", err)
+	}
+}
+
+func TestBoardSelectorRenameRejectsTakenName(t *testing.T) {
+	m := boardSelectorModel(t, config.Board{Name: "local", Directory: "tasks"}, editableADOBoard())
+
+	m = pressKey(t, m, "r")
+	m.textInput.SetValue("local")
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = updated.(Model)
+
+	if m.inputAction != inputActionRenameBoard || m.inputError == "" || m.config.Boards[1].Name != "team-sprint" {
+		t.Fatalf("action=%q error=%q name=%q, want prompt kept open and board unchanged", m.inputAction, m.inputError, m.config.Boards[1].Name)
+	}
+}

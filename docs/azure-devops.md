@@ -235,6 +235,8 @@ Select the board in the switcher and press **`e`**. The setup wizard runs again 
 
 Pressing `e` on a local board asks for a new name and directory instead.
 
+To only change a board's name, select it and press **`r`**. Nothing else about the board changes, and you stay in the switcher.
+
 ## Switching boards
 
 Open the board switcher with `:b`. ADO boards show an `[ADO]` badge and display `org / project / team` instead of a directory path.
