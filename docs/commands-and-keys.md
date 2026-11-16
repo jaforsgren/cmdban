@@ -26,7 +26,7 @@ Press `?` inside cmdban for the same list, grouped by view.
 | `r` | Refresh |
 | `R` | Toggle live reload: re-syncs every 30s (`live_reload_seconds`); the topbar's Synced line turns red while on |
 | `T` | Toggle the topbar (remembered as `hide_topbar`) |
-| `ctrl+b` | Board switcher |
+| `ctrl+b` | Board switcher (`a` new local, `A` new ADO, `e` edit selected) |
 | `ctrl+n` | Next recent board |
 | `ctrl+m` | Move task to another board |
 | `:` | Command mode |

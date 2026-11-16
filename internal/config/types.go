@@ -1,6 +1,8 @@
 package config
 
 import (
+	"errors"
+	"fmt"
 	"maps"
 	"slices"
 	"strings"
@@ -285,16 +287,72 @@ func (c *Config) IsColumnHidden(column string) bool {
 	return false
 }
 
-func (c *Config) AddBoard(name, directory string) {
+var (
+	ErrBoardNotFound = errors.New("board not found")
+	ErrBoardExists   = errors.New("a board with that name already exists")
+)
+
+// NoBoardIndex excludes no board when checking whether a name is taken.
+const NoBoardIndex = -1
+
+func (c *Config) AddBoard(name, directory string) error {
 	columns := make([]Column, len(DefaultColumns))
 	for i, col := range DefaultColumns {
 		columns[i] = Column{Name: col}
 	}
-	c.Boards = append(c.Boards, Board{
+	return c.AppendBoard(Board{
 		Name:      name,
 		Directory: directory,
 		Columns:   columns,
 	})
+}
+
+// AppendBoard adds board, refusing a name another board already uses since
+// boards are switched to by name.
+func (c *Config) AppendBoard(board Board) error {
+	if c.BoardNameTaken(board.Name, NoBoardIndex) {
+		return fmt.Errorf("%w: %q", ErrBoardExists, board.Name)
+	}
+	c.Boards = append(c.Boards, board)
+	return nil
+}
+
+// BoardNameTaken reports whether a board other than the one at exceptIndex
+// is called name.
+func (c *Config) BoardNameTaken(name string, exceptIndex int) bool {
+	for i, b := range c.Boards {
+		if i != exceptIndex && b.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+// ReplaceBoardAt swaps the board at index for board. It goes by position
+// rather than name so a board can be edited even when another board shares
+// its name. A rename carries over to the current board and recent list once
+// no board is left with the old name.
+func (c *Config) ReplaceBoardAt(index int, board Board) error {
+	if index < 0 || index >= len(c.Boards) {
+		return fmt.Errorf("%w: index %d", ErrBoardNotFound, index)
+	}
+	if c.BoardNameTaken(board.Name, index) {
+		return fmt.Errorf("%w: %q", ErrBoardExists, board.Name)
+	}
+	oldName := c.Boards[index].Name
+	c.Boards[index] = board
+	if oldName == board.Name || c.BoardByName(oldName) != nil {
+		return nil
+	}
+	if c.CurrentBoard == oldName {
+		c.CurrentBoard = board.Name
+	}
+	for i, name := range c.RecentBoards {
+		if name == oldName {
+			c.RecentBoards[i] = board.Name
+		}
+	}
+	return nil
 }
 
 func (c *Config) ConfigPath() string {

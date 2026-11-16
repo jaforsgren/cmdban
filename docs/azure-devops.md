@@ -229,6 +229,12 @@ boards:
 
 ---
 
+## Editing an ADO board
+
+Select the board in the switcher and press **`e`**. The setup wizard runs again with every step preselected to the board's current PAT, organisation, project, team, iteration and name, so you only change what you need. Saving replaces the board in place: lanes are re-read from ADO, hidden lanes stay hidden, and preferences such as assigned-to-me, unassigned cards, lane mode and default work item type are kept.
+
+Pressing `e` on a local board asks for a new name and directory instead.
+
 ## Switching boards
 
 Open the board switcher with `:b`. ADO boards show an `[ADO]` badge and display `org / project / team` instead of a directory path.

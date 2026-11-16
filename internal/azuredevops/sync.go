@@ -280,7 +280,7 @@ func filterForBoardMode(tasks []*task.Task, backlogLevel string, assignedToMe bo
 }
 
 const (
-	workItemTypeUserStory = "User Story"
+	WorkItemTypeUserStory = "User Story"
 	WorkItemTypeBug       = "Bug"
 	workItemTypeFeature   = "Feature"
 )
@@ -295,10 +295,10 @@ func filterFeaturesAndStories(tasks []*task.Task) []*task.Task {
 	featuresWithStories := make(map[int]bool)
 	hasStoryOrFeature := false
 	for _, t := range tasks {
-		if t.ADOWorkItemType == workItemTypeUserStory || t.ADOWorkItemType == workItemTypeFeature {
+		if t.ADOWorkItemType == WorkItemTypeUserStory || t.ADOWorkItemType == workItemTypeFeature {
 			hasStoryOrFeature = true
 		}
-		if t.ADOWorkItemType == workItemTypeUserStory && t.ADOParentID != 0 {
+		if t.ADOWorkItemType == WorkItemTypeUserStory && t.ADOParentID != 0 {
 			featuresWithStories[t.ADOParentID] = true
 		}
 	}
@@ -309,7 +309,7 @@ func filterFeaturesAndStories(tasks []*task.Task) []*task.Task {
 	filtered := make([]*task.Task, 0, len(tasks))
 	for _, t := range tasks {
 		switch t.ADOWorkItemType {
-		case workItemTypeUserStory:
+		case WorkItemTypeUserStory:
 			filtered = append(filtered, t)
 		case workItemTypeFeature:
 			if !featuresWithStories[t.ADOItemID] {
@@ -461,7 +461,7 @@ func UpdateRemoteTitleAndDescription(adoCfg *config.AzureDevOpsConfig, pat strin
 // unless the board configures another.
 func DefaultWorkItemType(adoCfg *config.AzureDevOpsConfig) string {
 	if adoCfg.DefaultWorkItemType == "" {
-		return workItemTypeUserStory
+		return WorkItemTypeUserStory
 	}
 	return adoCfg.DefaultWorkItemType
 }

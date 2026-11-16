@@ -43,6 +43,16 @@ type adoSetupState struct {
 	loading       bool
 	loadError     string
 	fromURL       bool
+	// editing is the configured board the wizard is rewriting; nil when
+	// setting up a new board.
+	editing *boardEdit
+}
+
+func (s adoSetupState) editingIndex() int {
+	if s.editing == nil {
+		return config.NoBoardIndex
+	}
+	return s.editing.index
 }
 
 type adoOrgsDiscoveredMsg struct{ orgs []string }
@@ -70,6 +80,63 @@ func (m Model) startADOSetup() (tea.Model, tea.Cmd) {
 	m.textInput.Width = 70
 	m.textInput.Focus()
 	return m, textinput.Blink
+}
+
+// editADOBoard reruns the setup wizard for an existing board, starting at the
+// PAT step with every list preselected to the board's current settings.
+func (m Model) editADOBoard(board config.Board, edit boardEdit) (tea.Model, tea.Cmd) {
+	if len(m.patStore.PATs) == 0 {
+		m.message = "No PATs stored. Run :pats to add one first."
+		return m, nil
+	}
+	m.adoSetup = adoSetupStateFor(board, m.patStore.Names())
+	m.adoSetup.editing = &edit
+	m.mode = ModeADOSetup
+	return m, nil
+}
+
+func adoSetupStateFor(board config.Board, patNames []string) adoSetupState {
+	ado := board.AzureDevOps
+	isBacklog := ado.BacklogLevel != ""
+	boardLevel := ado.BoardLevel
+	if isBacklog {
+		boardLevel = ado.BacklogLevel
+	}
+	return adoSetupState{
+		step:          adoSetupStepSelectPAT,
+		selectorIndex: bestMatchIndex(patNames, ado.PAT),
+		patAlias:      ado.PAT,
+		org:           ado.Org,
+		project:       ado.Project,
+		team:          ado.Team,
+		boardLevel:    boardLevel,
+		isBacklog:     isBacklog,
+		iteration:     ado.Iteration,
+		boardName:     board.Name,
+	}
+}
+
+func defaultADOBoardName(project string) string {
+	return strings.ToLower(strings.ReplaceAll(project, " ", "-")) + "-sprint"
+}
+
+// suggestBoardName proposes a name from the project, but never overrides the
+// name of a board being edited.
+func (s *adoSetupState) suggestBoardName() {
+	if s.editing == nil {
+		s.boardName = defaultADOBoardName(s.project)
+	}
+}
+
+// iterationSelectorIndex finds path in the iteration picker, where index 0 is
+// the synthetic "@CurrentIteration" option.
+func iterationSelectorIndex(iterations []azuredevops.Iteration, path string) int {
+	for i, it := range iterations {
+		if it.Path == path {
+			return i + 1
+		}
+	}
+	return 0
 }
 
 // parseADOBoardURL extracts org, project, team, and board level from either
@@ -130,7 +197,7 @@ func (m Model) handleADOSetupMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case adoSetupStepSelectProject:
 		return m.handleADOSetupSelectList(msg, m.adoSetup.projects, func(m Model, selected string) (tea.Model, tea.Cmd) {
 			m.adoSetup.project = selected
-			m.adoSetup.boardName = strings.ToLower(strings.ReplaceAll(selected, " ", "-")) + "-sprint"
+			m.adoSetup.suggestBoardName()
 			m.adoSetup.loading = true
 			m.adoSetup.step = adoSetupStepSelectTeam
 			m.adoSetup.selectorIndex = 0
@@ -139,7 +206,7 @@ func (m Model) handleADOSetupMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case adoSetupStepSelectTeam:
 		return m.handleADOSetupSelectList(msg, m.adoSetup.teams, func(m Model, selected string) (tea.Model, tea.Cmd) {
 			m.adoSetup.team = selected
-			m.adoSetup.boardName = strings.ToLower(strings.ReplaceAll(m.adoSetup.project, " ", "-")) + "-sprint"
+			m.adoSetup.suggestBoardName()
 			m.adoSetup.loading = true
 			return m, m.discoverBoard
 		})
@@ -286,7 +353,7 @@ func (m Model) discoverIterations() tea.Msg {
 func (m Model) handleADOIterationsDiscovered(iterations []azuredevops.Iteration) (tea.Model, tea.Cmd) {
 	m.adoSetup.loading = false
 	m.adoSetup.iterations = iterations
-	m.adoSetup.selectorIndex = 0
+	m.adoSetup.selectorIndex = iterationSelectorIndex(iterations, m.adoSetup.iteration)
 	m.mode = ModeADOSetup
 	return m, nil
 }
@@ -313,37 +380,22 @@ func backlogLevelFor(setup adoSetupState) string {
 }
 
 func (m Model) saveADOBoard(boardName string) (tea.Model, tea.Cmd) {
+	if m.rejectTakenBoardName(boardName, m.adoSetup.editingIndex()) {
+		m.adoSetup.boardName = boardName
+		return m.enterBoardNameStep()
+	}
 	setup := m.adoSetup
-	board := config.Board{
-		Name: boardName,
-		Type: config.BoardTypeAzureDevOps,
-		AzureDevOps: &config.AzureDevOpsConfig{
-			Org:                 setup.org,
-			Project:             setup.project,
-			Team:                setup.team,
-			Iteration:           setup.iteration,
-			BacklogLevel:        backlogLevelFor(setup),
-			PAT:                 setup.patAlias,
-			DefaultWorkItemType: "User Story",
-		},
+	var existing *config.Board
+	if setup.editing != nil {
+		existing = &m.config.Boards[setup.editing.index]
 	}
-	if len(setup.boardDetail.Columns) > 0 {
-		azuredevops.ApplyBoardLayout(&board, setup.boardDetail)
-	} else {
-		board.Columns = []config.Column{
-			{Name: "today"},
-			{Name: "tomorrow"},
-			{Name: "backlog"},
-			{Name: "done"},
-		}
-		board.AzureDevOps.ColumnMap = map[string]string{
-			"today":    "Active",
-			"tomorrow": "Committed",
-			"backlog":  "New",
-			"done":     "Closed",
-		}
+	board := adoBoardFromSetup(setup, boardName, existing)
+	if err := m.storeADOBoard(board); err != nil {
+		m.message = "Error saving board: " + err.Error()
+		m.logs.Error(m.message)
+		m.mode = ModeNormal
+		return m, nil
 	}
-	m.config.Boards = append(m.config.Boards, board)
 	if err := m.config.Save(); err != nil {
 		m.message = "Error saving config: " + err.Error()
 		m.logs.Error(m.message)
@@ -353,11 +405,70 @@ func (m Model) saveADOBoard(boardName string) (tea.Model, tea.Cmd) {
 	return m.switchBoard(boardName)
 }
 
+func (m Model) storeADOBoard(board config.Board) error {
+	if m.adoSetup.editing == nil {
+		return m.config.AppendBoard(board)
+	}
+	return m.config.ReplaceBoardAt(m.adoSetup.editing.index, board)
+}
+
+// adoBoardFromSetup builds the board the wizard describes. An edited board
+// keeps its preferences and lane visibility; only what the wizard asks for
+// is replaced.
+func adoBoardFromSetup(setup adoSetupState, boardName string, existing *config.Board) config.Board {
+	board := config.Board{
+		Type:        config.BoardTypeAzureDevOps,
+		AzureDevOps: &config.AzureDevOpsConfig{DefaultWorkItemType: azuredevops.WorkItemTypeUserStory},
+	}
+	if existing != nil && existing.AzureDevOps != nil {
+		board.Columns = existing.Columns
+		preserved := *existing.AzureDevOps
+		board.AzureDevOps = &preserved
+	}
+	board.Name = boardName
+	board.AzureDevOps.Org = setup.org
+	board.AzureDevOps.Project = setup.project
+	board.AzureDevOps.Team = setup.team
+	board.AzureDevOps.Iteration = setup.iteration
+	board.AzureDevOps.BacklogLevel = backlogLevelFor(setup)
+	board.AzureDevOps.PAT = setup.patAlias
+	if len(setup.boardDetail.Columns) > 0 {
+		azuredevops.ApplyBoardLayout(&board, setup.boardDetail)
+	} else {
+		applyDefaultStateLanes(&board)
+	}
+	return board
+}
+
+// applyDefaultStateLanes falls back to fixed lanes mapped to work item states
+// when the team's Kanban board couldn't be read.
+func applyDefaultStateLanes(board *config.Board) {
+	board.Columns = []config.Column{
+		{Name: "today"},
+		{Name: "tomorrow"},
+		{Name: "backlog"},
+		{Name: "done"},
+	}
+	board.AzureDevOps.ColumnMap = map[string]string{
+		"today":    "Active",
+		"tomorrow": "Committed",
+		"backlog":  "New",
+		"done":     "Closed",
+	}
+	board.AzureDevOps.BoardLevel = ""
+	board.AzureDevOps.BoardColumnField = ""
+	board.AzureDevOps.BoardColumns = nil
+}
+
 func (m Model) renderADOSetup() string {
 	setup := m.adoSetup
 
 	var rows []string
-	rows = append(rows, lipgloss.NewStyle().Bold(true).Foreground(HighlightColor).Render("  New Azure DevOps Board"))
+	title := "  New Azure DevOps Board"
+	if setup.editing != nil {
+		title = fmt.Sprintf("  Edit Azure DevOps Board %q", setup.editing.name)
+	}
+	rows = append(rows, lipgloss.NewStyle().Bold(true).Foreground(HighlightColor).Render(title))
 	rows = append(rows, "")
 
 	rows = append(rows, m.renderADOSetupBreadcrumb())
@@ -518,7 +629,7 @@ func renderADOSetupItem(label string, selected bool) string {
 func (m Model) handleADOOrgsDiscovered(orgs []string) (tea.Model, tea.Cmd) {
 	m.adoSetup.loading = false
 	m.adoSetup.orgs = orgs
-	m.adoSetup.selectorIndex = 0
+	m.adoSetup.selectorIndex = bestMatchIndex(orgs, m.adoSetup.org)
 	m.adoSetup.step = adoSetupStepSelectOrg
 	return m, nil
 }

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"slices"
@@ -593,5 +594,95 @@ func TestLiveReloadIntervalDefaultsAndConfigures(t *testing.T) {
 	}
 	if got := (&Config{LiveReloadSeconds: 10}).LiveReloadInterval(); got != 10*time.Second {
 		t.Fatalf("LiveReloadInterval() = %v, want 10s", got)
+	}
+}
+
+func TestReplaceBoardAtKeepsPositionAndRenamesReferences(t *testing.T) {
+	cfg := &Config{
+		CurrentBoard: "old",
+		Boards:       []Board{{Name: "first"}, {Name: "old"}, {Name: "last"}},
+		RecentBoards: []string{"old", "first"},
+	}
+
+	if err := cfg.ReplaceBoardAt(1, Board{Name: "new", Directory: "/tasks"}); err != nil {
+		t.Fatalf("ReplaceBoardAt() error = %v", err)
+	}
+
+	if got := cfg.Boards[1]; got.Name != "new" || got.Directory != "/tasks" {
+		t.Errorf("Boards[1] = %+v, want renamed board in place", got)
+	}
+	if cfg.CurrentBoard != "new" {
+		t.Errorf("CurrentBoard = %q, want %q", cfg.CurrentBoard, "new")
+	}
+	if !slices.Equal(cfg.RecentBoards, []string{"new", "first"}) {
+		t.Errorf("RecentBoards = %v, want [new first]", cfg.RecentBoards)
+	}
+}
+
+func TestReplaceBoardAtEditsOnlyTheIndexedBoardAmongDuplicateNames(t *testing.T) {
+	cfg := &Config{
+		CurrentBoard: "sprint",
+		Boards:       []Board{{Name: "sprint", Directory: "/a"}, {Name: "sprint", Directory: "/b"}},
+		RecentBoards: []string{"sprint"},
+	}
+
+	if err := cfg.ReplaceBoardAt(1, Board{Name: "sprint-b", Directory: "/b2"}); err != nil {
+		t.Fatalf("ReplaceBoardAt() error = %v", err)
+	}
+
+	if got := cfg.Boards[0]; got.Name != "sprint" || got.Directory != "/a" {
+		t.Errorf("Boards[0] = %+v, want untouched", got)
+	}
+	if got := cfg.Boards[1]; got.Name != "sprint-b" || got.Directory != "/b2" {
+		t.Errorf("Boards[1] = %+v, want edited", got)
+	}
+	if cfg.CurrentBoard != "sprint" || !slices.Equal(cfg.RecentBoards, []string{"sprint"}) {
+		t.Errorf("references = %q / %v, want still pointing at the remaining sprint board", cfg.CurrentBoard, cfg.RecentBoards)
+	}
+}
+
+func TestReplaceBoardAtLeavesOtherCurrentBoardAlone(t *testing.T) {
+	cfg := &Config{CurrentBoard: "first", Boards: []Board{{Name: "first"}, {Name: "old"}}}
+
+	if err := cfg.ReplaceBoardAt(1, Board{Name: "new"}); err != nil {
+		t.Fatalf("ReplaceBoardAt() error = %v", err)
+	}
+	if cfg.CurrentBoard != "first" {
+		t.Errorf("CurrentBoard = %q, want %q", cfg.CurrentBoard, "first")
+	}
+}
+
+func TestReplaceBoardAtRejectsIndexOutOfRange(t *testing.T) {
+	cfg := &Config{Boards: []Board{{Name: "first"}}}
+
+	for _, index := range []int{-1, 1} {
+		if err := cfg.ReplaceBoardAt(index, Board{Name: "x"}); !errors.Is(err, ErrBoardNotFound) {
+			t.Errorf("ReplaceBoardAt(%d) error = %v, want ErrBoardNotFound", index, err)
+		}
+	}
+}
+
+func TestReplaceBoardAtRejectsNameOfAnotherBoard(t *testing.T) {
+	cfg := &Config{Boards: []Board{{Name: "first"}, {Name: "second"}}}
+
+	if err := cfg.ReplaceBoardAt(1, Board{Name: "first"}); !errors.Is(err, ErrBoardExists) {
+		t.Fatalf("ReplaceBoardAt() error = %v, want ErrBoardExists", err)
+	}
+	if cfg.Boards[1].Name != "second" {
+		t.Errorf("Boards[1].Name = %q, want unchanged %q", cfg.Boards[1].Name, "second")
+	}
+}
+
+func TestAppendBoardRejectsDuplicateName(t *testing.T) {
+	cfg := &Config{Boards: []Board{{Name: "common-sprint"}}}
+
+	if err := cfg.AppendBoard(Board{Name: "common-sprint"}); !errors.Is(err, ErrBoardExists) {
+		t.Fatalf("AppendBoard() error = %v, want ErrBoardExists", err)
+	}
+	if len(cfg.Boards) != 1 {
+		t.Fatalf("len(Boards) = %d, want 1", len(cfg.Boards))
+	}
+	if err := cfg.AddBoard("common-sprint", "/tasks"); !errors.Is(err, ErrBoardExists) {
+		t.Fatalf("AddBoard() error = %v, want ErrBoardExists", err)
 	}
 }

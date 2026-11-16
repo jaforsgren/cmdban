@@ -71,3 +71,11 @@ func (s *Store) Delete(name string) {
 		}
 	}
 }
+
+func (s *Store) Names() []string {
+	names := make([]string, len(s.PATs))
+	for i, p := range s.PATs {
+		names[i] = p.Name
+	}
+	return names
+}

@@ -63,7 +63,7 @@ func TestWorkItemToTaskCarriesParentID(t *testing.T) {
 
 func TestFilterFeaturesAndStoriesDropsFeatureWithChildren(t *testing.T) {
 	feature := &task.Task{ADOItemID: 1, ADOWorkItemType: workItemTypeFeature}
-	story := &task.Task{ADOItemID: 2, ADOWorkItemType: workItemTypeUserStory, ADOParentID: 1}
+	story := &task.Task{ADOItemID: 2, ADOWorkItemType: WorkItemTypeUserStory, ADOParentID: 1}
 
 	got := filterFeaturesAndStories([]*task.Task{feature, story})
 
@@ -74,7 +74,7 @@ func TestFilterFeaturesAndStoriesDropsFeatureWithChildren(t *testing.T) {
 
 func TestFilterFeaturesAndStoriesKeepsChildlessFeature(t *testing.T) {
 	feature := &task.Task{ADOItemID: 1, ADOWorkItemType: workItemTypeFeature}
-	unrelatedStory := &task.Task{ADOItemID: 2, ADOWorkItemType: workItemTypeUserStory, ADOParentID: 99}
+	unrelatedStory := &task.Task{ADOItemID: 2, ADOWorkItemType: WorkItemTypeUserStory, ADOParentID: 99}
 
 	got := filterFeaturesAndStories([]*task.Task{feature, unrelatedStory})
 
@@ -85,7 +85,7 @@ func TestFilterFeaturesAndStoriesKeepsChildlessFeature(t *testing.T) {
 
 func TestFilterFeaturesAndStoriesDropsOtherTypesWhenStoriesPresent(t *testing.T) {
 	bug := &task.Task{ADOItemID: 1, ADOWorkItemType: "Bug"}
-	story := &task.Task{ADOItemID: 2, ADOWorkItemType: workItemTypeUserStory}
+	story := &task.Task{ADOItemID: 2, ADOWorkItemType: WorkItemTypeUserStory}
 
 	got := filterFeaturesAndStories([]*task.Task{bug, story})
 
@@ -108,7 +108,7 @@ func TestFilterFeaturesAndStoriesPassesThroughWhenNoneCarried(t *testing.T) {
 func TestFilterForBoardModeSkipsFilterForBacklogBoards(t *testing.T) {
 	epic := &task.Task{ADOItemID: 1, ADOWorkItemType: "Epic"}
 	feature := &task.Task{ADOItemID: 2, ADOWorkItemType: workItemTypeFeature, ADOParentID: 1}
-	story := &task.Task{ADOItemID: 3, ADOWorkItemType: workItemTypeUserStory, ADOParentID: 2}
+	story := &task.Task{ADOItemID: 3, ADOWorkItemType: WorkItemTypeUserStory, ADOParentID: 2}
 
 	got := filterForBoardMode([]*task.Task{epic, feature, story}, "Epics", false)
 
@@ -119,7 +119,7 @@ func TestFilterForBoardModeSkipsFilterForBacklogBoards(t *testing.T) {
 
 func TestFilterForBoardModeSkipsFilterForAssignedToMeBoards(t *testing.T) {
 	feature := &task.Task{ADOItemID: 1, ADOWorkItemType: workItemTypeFeature}
-	story := &task.Task{ADOItemID: 2, ADOWorkItemType: workItemTypeUserStory, ADOParentID: 1}
+	story := &task.Task{ADOItemID: 2, ADOWorkItemType: WorkItemTypeUserStory, ADOParentID: 1}
 
 	got := filterForBoardMode([]*task.Task{feature, story}, "", true)
 
@@ -130,7 +130,7 @@ func TestFilterForBoardModeSkipsFilterForAssignedToMeBoards(t *testing.T) {
 
 func TestFilterForBoardModeAppliesFilterForIterationBoards(t *testing.T) {
 	feature := &task.Task{ADOItemID: 1, ADOWorkItemType: workItemTypeFeature}
-	story := &task.Task{ADOItemID: 2, ADOWorkItemType: workItemTypeUserStory, ADOParentID: 1}
+	story := &task.Task{ADOItemID: 2, ADOWorkItemType: WorkItemTypeUserStory, ADOParentID: 1}
 
 	got := filterForBoardMode([]*task.Task{feature, story}, "", false)
 

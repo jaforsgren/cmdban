@@ -47,7 +47,17 @@ const (
 	inputActionNewTask  = "new"
 	inputActionNewBug   = "new-bug"
 	inputActionMoveLane = "move-lane"
+	// A local board edit asks for the name, then the directory.
+	inputActionEditBoardName = "edit-board-name"
+	inputActionEditBoardDir  = "edit-board-dir"
 )
+
+// boardEdit identifies the board being edited by its position, since board
+// names aren't guaranteed unique in hand-edited configs.
+type boardEdit struct {
+	index int
+	name  string
+}
 
 // pendingMove is a lane move waiting for confirmation.
 type pendingMove struct {
@@ -104,6 +114,9 @@ type Model struct {
 	boardSelectorIndex int
 	moveBoardIndex     int
 	pendingBoardName   string
+	localBoardEdit     boardEdit
+	// inputError explains why the open prompt rejected its value.
+	inputError         string
 	patSelectorIndex   int
 	pendingPATName     string
 	revealedPATIndex   int
@@ -296,7 +309,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case adoProjectsDiscoveredMsg:
 		m.adoSetup.loading = false
 		m.adoSetup.projects = msg.projects
-		m.adoSetup.selectorIndex = 0
+		m.adoSetup.selectorIndex = bestMatchIndex(msg.projects, m.adoSetup.project)
 		return m, nil
 
 	case adoTeamsDiscoveredMsg:
@@ -665,6 +678,9 @@ func (m Model) handleNormalMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleInputMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if key.Matches(msg, m.keys.Escape) || key.Matches(msg, m.keys.Enter) {
+		m.inputError = ""
+	}
 	switch {
 	case key.Matches(msg, m.keys.Escape):
 		m.mode = ModeNormal
@@ -690,6 +706,9 @@ func (m Model) handleInputMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "settings":
 			return m.handleSettingsCommand(value)
 		case "new-board-name":
+			if m.rejectTakenBoardName(value, config.NoBoardIndex) {
+				return m, nil
+			}
 			m.pendingBoardName = value
 			m.inputAction = "new-board-dir"
 			m.textInput.Reset()
@@ -697,6 +716,18 @@ func (m Model) handleInputMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, textinput.Blink
 		case "new-board-dir":
 			return m.createBoard(m.pendingBoardName, value)
+		case inputActionEditBoardName:
+			if m.rejectTakenBoardName(value, m.localBoardEdit.index) {
+				return m, nil
+			}
+			m.pendingBoardName = value
+			m.inputAction = inputActionEditBoardDir
+			m.textInput.Reset()
+			m.textInput.SetValue(m.config.Boards[m.localBoardEdit.index].Directory)
+			m.textInput.Placeholder = "Directory path..."
+			return m, textinput.Blink
+		case inputActionEditBoardDir:
+			return m.saveLocalBoardEdit(m.pendingBoardName, value)
 		case "pat-name":
 			m.pendingPATName = value
 			m.inputAction = "pat-token"
@@ -732,7 +763,7 @@ func (m Model) handleInputMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.adoSetup.team = team
 			m.adoSetup.boardLevel = boardLevel
 			m.adoSetup.isBacklog = isBacklog
-			m.adoSetup.boardName = strings.ToLower(strings.ReplaceAll(project, " ", "-")) + "-sprint"
+			m.adoSetup.boardName = defaultADOBoardName(project)
 			m.adoSetup.fromURL = true
 			m.mode = ModeADOSetup
 			return m, nil
@@ -2522,7 +2553,11 @@ func (m Model) renderFooter() string {
 			prefix = ":"
 		}
 		input := InputStyle.Render(prefix + m.textInput.View())
-		return input
+		if m.inputError == "" {
+			return input
+		}
+		inputError := lipgloss.NewStyle().Foreground(WarningColor).Render("  " + m.inputError)
+		return lipgloss.JoinVertical(lipgloss.Left, inputError, input)
 	}
 
 	if m.mode == ModeTag {
@@ -2772,25 +2807,85 @@ func (m Model) handleBoardSelectorMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, textinput.Blink
 	case "A":
 		return m.startADOSetup()
+	case "e":
+		if m.boardSelectorIndex < len(boards) {
+			return m.editBoard(m.boardSelectorIndex)
+		}
 	case "esc", "q":
 		m.mode = ModeNormal
 	}
 	return m, nil
 }
 
+// editBoard reruns the ADO setup wizard for an ADO board, or asks for a new
+// name and directory for a local one.
+func (m Model) editBoard(index int) (tea.Model, tea.Cmd) {
+	board := m.config.Boards[index]
+	edit := boardEdit{index: index, name: board.Name}
+	if board.Type == config.BoardTypeAzureDevOps && board.AzureDevOps != nil {
+		return m.editADOBoard(board, edit)
+	}
+	m.localBoardEdit = edit
+	m.mode = ModeInput
+	m.inputAction = inputActionEditBoardName
+	m.textInput.Reset()
+	m.textInput.SetValue(board.Name)
+	m.textInput.Placeholder = "Board name..."
+	m.textInput.EchoMode = textinput.EchoNormal
+	m.textInput.Focus()
+	return m, textinput.Blink
+}
+
+// rejectTakenBoardName keeps the prompt open with an explanation when another
+// board than the one at exceptIndex already uses name.
+func (m *Model) rejectTakenBoardName(name string, exceptIndex int) bool {
+	if !m.config.BoardNameTaken(name, exceptIndex) {
+		return false
+	}
+	m.inputError = fmt.Sprintf("Another board is already named %q — pick a different name", name)
+	return true
+}
+
+func (m Model) saveLocalBoardEdit(name, directory string) (tea.Model, tea.Cmd) {
+	board := m.config.Boards[m.localBoardEdit.index]
+	board.Name = name
+	board.Directory = directory
+	if err := m.config.ReplaceBoardAt(m.localBoardEdit.index, board); err != nil {
+		m.message = "Error updating board: " + err.Error()
+		m.logs.Error(m.message)
+		m.mode = ModeNormal
+		return m, nil
+	}
+	return m.saveAndOpenLocalBoard(name)
+}
+
 func (m Model) createBoard(name, directory string) (tea.Model, tea.Cmd) {
-	m.config.AddBoard(name, directory)
+	if err := m.config.AddBoard(name, directory); err != nil {
+		m.message = "Error adding board: " + err.Error()
+		m.logs.Error(m.message)
+		m.mode = ModeNormal
+		return m, nil
+	}
+	return m.saveAndOpenLocalBoard(name)
+}
+
+func (m Model) saveAndOpenLocalBoard(name string) (tea.Model, tea.Cmd) {
 	if err := m.config.Save(); err != nil {
 		m.message = "Error saving config: " + err.Error()
 		m.logs.Error(m.message)
 		m.mode = ModeNormal
 		return m, nil
 	}
+	updated, cmd := m.switchBoard(name)
+	// The directory is created after switching, since it belongs to the
+	// active board.
 	if err := m.config.EnsureTaskDirectory(); err != nil {
-		m.message = "Error creating directory: " + err.Error()
-		m.logs.Error(m.message)
+		switched := updated.(Model)
+		switched.message = "Error creating directory: " + err.Error()
+		switched.logs.Error(switched.message)
+		return switched, cmd
 	}
-	return m.switchBoard(name)
+	return updated, cmd
 }
 
 // switchBoard activates name and moves it to the front of the recent list.
@@ -2886,7 +2981,7 @@ func (m Model) renderBoardSelector() string {
 
 	var rows []string
 	rows = append(rows, lipgloss.NewStyle().Bold(true).Foreground(HighlightColor).Render("  Select Board  "))
-	rows = append(rows, lipgloss.NewStyle().Foreground(SubtleColor).Render("  j/k: navigate  enter: select  a: new local  A: new ADO  esc: cancel"))
+	rows = append(rows, lipgloss.NewStyle().Foreground(SubtleColor).Render("  j/k: navigate  enter: select  a: new local  A: new ADO  e: edit  esc: cancel"))
 	rows = append(rows, "")
 
 	for i, b := range boards {
