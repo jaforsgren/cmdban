@@ -85,6 +85,27 @@ Most board keys (`a`, `b`, `e`, `t`, `m`, `c`, `M`, `H` / `L`) work here too.
 | `A` | New Azure DevOps board (guided setup) |
 | `q` / `esc` | Close |
 
+## Wiki mode
+
+`:wiki` (or `:w`) switches to wiki mode, which lists your Azure DevOps wiki pages and nothing else — boards stay out of it. Each wiki is one line; open it to see the pages beneath it as a tree, with lines showing which page sits under which and a count of sub pages beside every parent.
+
+| Key | Action |
+|---|---|
+| `j` / `k`, `gg` / `G` | Select page |
+| `l` / `→` | Expand the page (▸ → ▾); on an expanded page, step into its first sub page |
+| `h` / `←` | Collapse the page; on a collapsed page, step out to its parent |
+| `enter` | Read the page full screen (`j` / `k` scroll, `q` back) |
+| `tab` | Toggle a preview of the selected page beside the tree (`ctrl+u` / `ctrl+f` scroll it) |
+| `ctrl+g` | Edit the page in `$EDITOR`; on save you're asked before the change is published to Azure DevOps |
+| `M` | Open the page read-only in `$EDITOR` |
+| `ctrl+o` | Open the page in the browser |
+| `r` | Refresh every wiki |
+| `a` | Add a wiki: paste a page URL from the browser |
+| `x` | Remove the selected wiki from cmdban (its top line only; nothing changes in Azure DevOps) |
+| `q` / `esc` | Back to the board |
+
+Edits are guarded by the page's version: if someone changed the page after you opened it, publishing is refused and your edit is left in the temp file named in the message.
+
 ## Commands
 
 | Command | Action |
@@ -94,6 +115,7 @@ Most board keys (`a`, `b`, `e`, `t`, `m`, `c`, `M`, `H` / `L`) work here too.
 | `:config` / `:c` | Open config in `$EDITOR` |
 | `:settings dir <path>` | Set the board's task directory |
 | `:adocolumns [board]` | Sync lanes from an Azure DevOps Kanban board |
+| `:wiki` / `:w [url]` | Wiki mode; with a URL, add that wiki page |
 | `:move` / `:m` | Move task to another board |
 | `:clear` | Archive all tasks in the lane |
 | `:logs` / `:l` | Log viewer |

@@ -41,6 +41,27 @@ ignore_files:
 
 Default columns: `today`, `tomorrow`, `backlog`, `done`.
 
+## Wikis
+
+Wikis shown in wiki mode (`:wiki`) live in their own list, apart from the boards. Adding one with `a` in wiki mode (or `:wiki <url>`) fills it in from the page URL and picks the PAT an ADO board in the same organisation already uses.
+
+```yaml
+wikis:
+  - name: Kravdokumentation
+    org: lfantdevelophub
+    project: common
+    wiki: ProjectManagement
+    page_id: 93
+    pat: work
+```
+
+| Option | Description |
+|---|---|
+| `name` | Shown on the wiki's line; the page's title when added |
+| `org` / `project` / `wiki` | Where the wiki lives |
+| `page_id` | The page shown with everything beneath it, as in the page URL (`.../_wiki/wikis/<wiki>/<page_id>/<slug>`); leave it out for the whole wiki |
+| `pat` | Name of the PAT (see `:pats`) used to read and edit the wiki |
+
 ## Other files
 
 | File | Contents |

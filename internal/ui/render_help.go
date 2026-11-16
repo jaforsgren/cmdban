@@ -44,7 +44,7 @@ var commandHelp = []shortcut{
 	{":pats / :p", "PAT manager"},
 	{":quit / :q", "quit"},
 	{":settings dir <path>", "set the board's task directory"},
-	{":write / :w", "tasks auto-save (no-op)"},
+	{":wiki / :w [url]", "wiki mode; with a URL, add that wiki page"},
 }
 
 // generalShortcuts work the same in every view, so the per-view help
@@ -59,8 +59,8 @@ var generalShortcuts = []shortcut{
 }
 
 // helpSections lists the general keys, the board's own keys and commands,
-// then each view's keys minus the general ones and those the board already
-// lists.
+// then each view's keys minus the general ones and those the board or an
+// earlier view already lists.
 // Sections left empty are dropped.
 func helpSections() []helpSection {
 	board := withoutGeneralShortcuts(slices.Concat(boardNavigationShortcuts, boardShortcuts))
@@ -81,6 +81,8 @@ func helpSections() []helpSection {
 		{"Board switcher", ModeBoardSelector},
 		{"Move to board", ModeMoveBoard},
 		{"Link PR", ModePRPicker},
+		{"Wiki", ModeWiki},
+		{"Wiki page", ModeWikiView},
 		{"PAT manager", ModePATManager},
 		{"Logs", ModeLogs},
 		{"Input / command / ADO setup", ModeInput},
@@ -93,6 +95,7 @@ func helpSections() []helpSection {
 		})
 		if len(shortcuts) > 0 {
 			sections = append(sections, helpSection{view.title, shortcuts})
+			known = append(known, shortcuts...)
 		}
 	}
 	return sections
@@ -210,6 +213,10 @@ func (m Model) maxHelpScroll() int {
 }
 
 func (m Model) openHelp() (tea.Model, tea.Cmd) {
+	m.helpReturnMode = ModeNormal
+	if isWikiMode(m.mode) {
+		m.helpReturnMode = m.mode
+	}
 	m.mode = ModeHelp
 	m.viewScroll = 0
 	return m, nil
@@ -218,7 +225,7 @@ func (m Model) openHelp() (tea.Model, tea.Cmd) {
 func (m Model) handleHelpMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case key.Matches(msg, m.keys.Help), key.Matches(msg, m.keys.Escape), msg.String() == "q":
-		m.mode = ModeNormal
+		m.mode = m.helpReturnMode
 	case key.Matches(msg, m.keys.Down):
 		m.viewScroll = min(m.viewScroll+1, m.maxHelpScroll())
 	case key.Matches(msg, m.keys.Up):

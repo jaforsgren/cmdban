@@ -49,6 +49,7 @@ Tasks are markdown files with a small metadata footer — see [task format](docs
 | `:pats` | Manage personal access tokens |
 | `:config` | Edit configuration |
 | `:adocolumns [board]` | Sync lanes from an Azure DevOps board |
+| `:wiki` / `:w [url]` | Wiki mode: browse Azure DevOps wiki pages; with a URL, add that page |
 | `:logs` | Log viewer |
 | `:q` | Quit |
 

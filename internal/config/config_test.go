@@ -686,3 +686,77 @@ func TestAppendBoardRejectsDuplicateName(t *testing.T) {
 		t.Fatalf("AddBoard() error = %v, want ErrBoardExists", err)
 	}
 }
+
+func testWiki(pageID int) Wiki {
+	return Wiki{Name: "Krav", Org: "org", Project: "proj", Wiki: "Docs", PageID: pageID, PAT: "work"}
+}
+
+func TestAddWikiRefusesTheSamePageTwice(t *testing.T) {
+	cfg := &Config{}
+	if err := cfg.AddWiki(testWiki(93)); err != nil {
+		t.Fatalf("AddWiki() error = %v", err)
+	}
+	duplicate := testWiki(93)
+	duplicate.Org = "ORG"
+	if err := cfg.AddWiki(duplicate); !errors.Is(err, ErrWikiExists) {
+		t.Fatalf("AddWiki() error = %v, want ErrWikiExists for the same page in another letter case", err)
+	}
+	if err := cfg.AddWiki(testWiki(94)); err != nil {
+		t.Fatalf("AddWiki() error = %v, want another page of the same wiki accepted", err)
+	}
+}
+
+func TestRemoveWikiAtDropsOnlyThatWiki(t *testing.T) {
+	cfg := &Config{Wikis: []Wiki{testWiki(1), testWiki(2), testWiki(3)}}
+	if err := cfg.RemoveWikiAt(1); err != nil {
+		t.Fatalf("RemoveWikiAt() error = %v", err)
+	}
+	if len(cfg.Wikis) != 2 || cfg.Wikis[0].PageID != 1 || cfg.Wikis[1].PageID != 3 {
+		t.Fatalf("Wikis = %+v, want pages 1 and 3", cfg.Wikis)
+	}
+	if err := cfg.RemoveWikiAt(5); !errors.Is(err, ErrWikiNotFound) {
+		t.Fatalf("RemoveWikiAt(5) error = %v, want ErrWikiNotFound", err)
+	}
+}
+
+func TestPATForOrgPrefersABoardInTheSameOrg(t *testing.T) {
+	cfg := &Config{Boards: []Board{
+		{Name: "other", AzureDevOps: &AzureDevOpsConfig{Org: "elsewhere", PAT: "other-pat"}},
+		{Name: "sprint", AzureDevOps: &AzureDevOpsConfig{Org: "Org", PAT: "org-pat"}},
+	}}
+	if got := cfg.PATForOrg("org", []string{"first"}); got != "org-pat" {
+		t.Fatalf("PATForOrg() = %q, want the org's board PAT", got)
+	}
+	if got := cfg.PATForOrg("unknown", []string{"first"}); got != "first" {
+		t.Fatalf("PATForOrg() = %q, want the first stored PAT", got)
+	}
+	if got := cfg.PATForOrg("unknown", nil); got != "" {
+		t.Fatalf("PATForOrg() = %q, want none without stored PATs", got)
+	}
+}
+
+func TestWikisSurviveSaveAndLoadApartFromBoards(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	boardCount := len(cfg.Boards)
+	if err := cfg.AddWiki(testWiki(93)); err != nil {
+		t.Fatalf("AddWiki() error = %v", err)
+	}
+	if err := cfg.Save(); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	loaded, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if len(loaded.Wikis) != 1 || loaded.Wikis[0] != testWiki(93) {
+		t.Fatalf("Wikis = %+v, want the saved wiki", loaded.Wikis)
+	}
+	if len(loaded.Boards) != boardCount {
+		t.Fatalf("Boards = %d, want the wiki kept out of the boards (%d)", len(loaded.Boards), boardCount)
+	}
+}

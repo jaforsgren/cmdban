@@ -89,6 +89,8 @@ const (
 	ModeFocus
 	ModeMoveBoard
 	ModePRPicker
+	ModeWiki
+	ModeWikiView
 )
 
 type Model struct {
@@ -141,6 +143,10 @@ type Model struct {
 	prPicker            prPickerState
 
 	pendingMove pendingMove
+
+	wiki wikiState
+	// helpReturnMode is the screen closing help goes back to.
+	helpReturnMode Mode
 
 	liveReload           bool
 	liveReloadGeneration int
@@ -227,6 +233,7 @@ func NewModel(cfg *config.Config) Model {
 		revealedPATIndex: -1,
 		minimizedLanes:   make(map[task.Status]bool),
 		logs:             logs,
+		wiki:             newWikiState(),
 	}
 }
 
@@ -379,6 +386,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case configEditorFinishedMsg:
 		return m.reloadConfig()
+
+	case wikiTreeLoadedMsg:
+		return m.handleWikiTreeLoaded(msg)
+
+	case wikiPageLoadedMsg:
+		return m.handleWikiPageLoaded(msg)
+
+	case wikiAddedMsg:
+		return m.handleWikiAdded(msg)
+
+	case wikiEditReadyMsg:
+		return m.handleWikiEditReady(msg)
+
+	case wikiEditorFinishedMsg:
+		return m.handleWikiEditorFinished(msg)
+
+	case wikiPagePublishedMsg:
+		return m.handleWikiPagePublished(msg)
 	}
 
 	return m, nil
@@ -444,6 +469,14 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	if m.mode == ModePRPicker {
 		return m.handlePRPickerMode(msg)
+	}
+
+	if m.mode == ModeWiki {
+		return m.handleWikiMode(msg)
+	}
+
+	if m.mode == ModeWikiView {
+		return m.handleWikiViewMode(msg)
 	}
 
 	return m.handleNormalMode(msg)
@@ -684,7 +717,7 @@ func (m Model) handleInputMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	switch {
 	case key.Matches(msg, m.keys.Escape):
-		m.mode = ModeNormal
+		m.mode = m.inputReturnMode()
 		m.textInput.Reset()
 		m.textInput.EchoMode = textinput.EchoNormal
 		return m, nil
@@ -692,7 +725,7 @@ func (m Model) handleInputMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.Enter):
 		value := strings.TrimSpace(m.textInput.Value())
 		if value == "" {
-			m.mode = ModeNormal
+			m.mode = m.inputReturnMode()
 			m.textInput.EchoMode = textinput.EchoNormal
 			return m, nil
 		}
@@ -785,6 +818,8 @@ func (m Model) handleInputMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, m.discoverProjects
 		case "ado-board-name":
 			return m.saveADOBoard(value)
+		case inputActionAddWiki:
+			return m.addWiki(value)
 		}
 
 		if m.mode == ModeCommand {
@@ -814,11 +849,20 @@ func (m Model) handleConfirmMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.pendingMove = pendingMove{}
 			return m.applyMove(move.task, move.lane, move.returnMode)
 		}
+		if m.inputAction == inputActionRemoveWiki {
+			return m.removeSelectedWiki()
+		}
+		if m.inputAction == inputActionPublishWikiPage {
+			return m.publishWikiEdit()
+		}
 		m.mode = ModeNormal
 	case "n", "N", "esc":
-		m.mode = ModeNormal
+		m.mode = m.inputReturnMode()
 		if m.inputAction == inputActionMoveLane {
 			m.mode = m.pendingMove.returnMode
+		}
+		if m.inputAction == inputActionPublishWikiPage {
+			m.discardWikiEdit()
 		}
 		m.pendingMove = pendingMove{}
 	}
@@ -1410,8 +1454,8 @@ func (m Model) handleCommand(cmd string) (tea.Model, tea.Cmd) {
 	case "q", "quit":
 		return m, tea.Quit
 
-	case "w", "write":
-		m.message = "Tasks auto-saved to markdown files"
+	case "wiki", "w":
+		return m.handleWikiCommand(parts[1:])
 
 	case "help", "h":
 		return m.openHelp()
@@ -2170,6 +2214,9 @@ func (m Model) displayMode() Mode {
 	if m.mode == ModeConfirm && m.inputAction == inputActionMoveLane {
 		return m.pendingMove.returnMode
 	}
+	if (m.mode == ModeConfirm || m.mode == ModeInput) && isWikiInputAction(m.inputAction) {
+		return m.wiki.returnMode
+	}
 	return m.mode
 }
 
@@ -2214,6 +2261,14 @@ func (m Model) renderBoard() string {
 
 	if mode == ModeFocus {
 		return m.renderFocusView()
+	}
+
+	if mode == ModeWiki {
+		return m.renderWiki()
+	}
+
+	if mode == ModeWikiView {
+		return m.renderWikiView()
 	}
 
 	laneWidths := m.computeLaneWidths()
@@ -2583,6 +2638,9 @@ func (m Model) renderFooter() string {
 		if m.inputAction == inputActionMoveLane {
 			return DialogStyle.Render(m.moveConfirmPrompt())
 		}
+		if isWikiInputAction(m.inputAction) {
+			return DialogStyle.Render(m.wikiInputPrompt())
+		}
 		return DialogStyle.Render("Delete task? (y/n)")
 	}
 
@@ -2692,41 +2750,46 @@ func (m Model) adoDetailBodyLines(t *task.Task, width int) []string {
 	if t.ReproSteps != "" {
 		body += "\n\n## Repro Steps\n\n" + t.ReproSteps
 	}
+	return m.markdownLines(body, width)
+}
+
+// markdownLines renders markdown wrapped to width, so scrolling counts the
+// lines actually shown.
+func (m Model) markdownLines(body string, width int) []string {
 	m.mdRenderer.SetWidth(width)
 	wrapped := lipgloss.NewStyle().Width(width).Render(m.mdRenderer.Render(body))
 	return strings.Split(wrapped, "\n")
 }
 
 func (m Model) renderADOTaskDetailPane(t *task.Task, width int, footerHint string) string {
-	availableHeight := m.bodyHeight() - detailPaneChromeRows
-
-	heading := lipgloss.NewStyle().Bold(true).Foreground(HighlightColor).
-		Render(fmt.Sprintf("#%d  %s", t.ADOItemID, t.Title))
-
-	separator := lipgloss.NewStyle().Foreground(SubtleColor).
-		Render(strings.Repeat("─", width-detailPaneContentInsetCols))
-
 	var metaParts []string
 	metaParts = append(metaParts, "Status: "+string(t.Status))
 	if len(t.Tags) > 0 {
 		metaParts = append(metaParts, "Tags: "+strings.Join(t.Tags, ", "))
 	}
-	meta := lipgloss.NewStyle().Foreground(SubtleColor).Render(strings.Join(metaParts, "  ·  "))
+	return m.renderReadPane(width, m.viewScroll,
+		fmt.Sprintf("#%d  %s", t.ADOItemID, t.Title),
+		strings.Join(metaParts, "  ·  "),
+		m.adoDetailBodyLines(t, width-detailPaneContentInsetCols),
+		footerHint,
+	)
+}
 
-	lines := m.adoDetailBodyLines(t, width-detailPaneContentInsetCols)
-	if m.viewScroll >= len(lines) {
-		m.viewScroll = len(lines) - 1
-	}
-	if m.viewScroll < 0 {
-		m.viewScroll = 0
-	}
-	end := m.viewScroll + availableHeight - 6
-	if end > len(lines) {
-		end = len(lines)
-	}
-	visibleDesc := strings.Join(lines[m.viewScroll:end], "\n")
+// readPaneFixedRows are the rows of a read pane's text area not given to
+// the body: heading, meta line, the two separators, the footer and a spare.
+const readPaneFixedRows = 6
 
-	footer := lipgloss.NewStyle().Foreground(SubtleColor).Render(footerHint)
+// renderReadPane draws a bordered pane sized to width: heading, meta line,
+// the body lines from scroll on, and a footer hint.
+func (m Model) renderReadPane(width, scroll int, heading, meta string, lines []string, footerHint string) string {
+	availableHeight := m.bodyHeight() - detailPaneChromeRows
+
+	separator := lipgloss.NewStyle().Foreground(SubtleColor).
+		Render(strings.Repeat("─", width-detailPaneContentInsetCols))
+
+	scroll = max(min(scroll, len(lines)-1), 0)
+	end := min(scroll+availableHeight-readPaneFixedRows, len(lines))
+	visibleBody := strings.Join(lines[scroll:max(end, scroll)], "\n")
 
 	detailStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
@@ -2737,12 +2800,12 @@ func (m Model) renderADOTaskDetailPane(t *task.Task, width int, footerHint strin
 
 	return detailStyle.Render(
 		lipgloss.JoinVertical(lipgloss.Left,
-			heading,
-			meta,
+			lipgloss.NewStyle().Bold(true).Foreground(HighlightColor).Render(heading),
+			lipgloss.NewStyle().Foreground(SubtleColor).Render(meta),
 			separator,
-			visibleDesc,
+			visibleBody,
 			separator,
-			footer,
+			lipgloss.NewStyle().Foreground(SubtleColor).Render(footerHint),
 		),
 	)
 }

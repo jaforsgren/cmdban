@@ -81,7 +81,11 @@ func (m Model) renderTopBar() string {
 		topBarSection("CONTEXT", m.buildContextInfo()),
 		topBarSection("RECENT", m.buildRecentBoardsSection()),
 	}
-	if m.config.IsADOBoard() {
+	if isWikiMode(m.displayMode()) {
+		// Wiki mode stands apart from the boards, so their context and
+		// recent list stay out of it.
+		sections = [][]string{topBarSection("CONTEXT", m.buildWikiContextInfo())}
+	} else if m.config.IsADOBoard() {
 		sections = append(sections, topBarSection("FILTERS", m.buildFilterSection()))
 	}
 	used := topBarPaddingCols
@@ -199,10 +203,14 @@ func (m Model) syncedLine() string {
 }
 
 func (m Model) syncedDescription() string {
-	if m.lastSyncTime.IsZero() {
+	return describeSync(m.lastSyncTime)
+}
+
+func describeSync(lastSync time.Time) string {
+	if lastSync.IsZero() {
 		return "never"
 	}
-	elapsed := time.Since(m.lastSyncTime).Round(time.Second)
+	elapsed := time.Since(lastSync).Round(time.Second)
 	if elapsed < syncedJustNowWindow {
 		return "just now"
 	}
@@ -460,6 +468,17 @@ func shortcutsForMode(mode Mode) []shortcut {
 		return []shortcut{{taskNavigationKeys, "scroll"}, {topBottomKeys, "top/bottom"}, {"x", "clear"}, {closeKey, "close"}}
 	case ModeComments:
 		return []shortcut{{"a", "add comment"}, {taskNavigationKeys, "scroll"}, {topBottomKeys, "top/bottom"}, {closeKey, "close"}}
+	case ModeWiki:
+		return []shortcut{
+			{taskNavigationKeys, "select page"}, {"l", "expand / step in"}, {"h", "collapse / step out"}, {"enter", "read page"}, {"tab", "preview"},
+			{"ctrl+u/ctrl+f", "scroll preview"}, {"ctrl+g", "edit in nvim"}, {"M", "page as markdown"}, {"ctrl+o", "open page in browser"},
+			{"r", "refresh"}, {"a", "add wiki"}, {"x", "remove wiki"}, {closeKey, "back to board"},
+		}
+	case ModeWikiView:
+		return []shortcut{
+			{closeKey, "back to wikis"}, {taskNavigationKeys, "scroll"}, {topBottomKeys, "top"}, {"ctrl+g", "edit in nvim"}, {"M", "page as markdown"},
+			{"ctrl+o", "open page in browser"}, {"r", "refresh"},
+		}
 	default:
 		return nil
 	}
@@ -497,6 +516,10 @@ func (m Model) modeName() string {
 		return "MOVE"
 	case ModePRPicker:
 		return "LINK PR"
+	case ModeWiki:
+		return "WIKI"
+	case ModeWikiView:
+		return "WIKI PAGE"
 	default:
 		return "NORMAL"
 	}

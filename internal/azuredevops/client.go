@@ -23,7 +23,11 @@ const commentsAPIVersion = "7.1-preview.4"
 // natively, so editor input is posted without conversion.
 const commentFormatMarkdown = "markdown"
 
+// defaultHost is the Azure DevOps Services origin every request goes to.
+const defaultHost = "https://dev.azure.com"
+
 type Client struct {
+	host    string
 	org     string
 	project string
 	team    string
@@ -33,6 +37,7 @@ type Client struct {
 
 func NewClient(org, project, team, pat string) *Client {
 	return &Client{
+		host:    defaultHost,
 		org:     org,
 		project: project,
 		team:    team,
@@ -46,7 +51,7 @@ func (c *Client) authHeader() string {
 }
 
 func (c *Client) baseURL() string {
-	return fmt.Sprintf("https://dev.azure.com/%s/%s", url.PathEscape(c.org), url.PathEscape(c.project))
+	return fmt.Sprintf("%s/%s/%s", c.host, url.PathEscape(c.org), url.PathEscape(c.project))
 }
 
 // teamURL is baseURL with the team segment appended, for the team-scoped
@@ -59,44 +64,66 @@ func (c *Client) teamURL() string {
 // response into out. A nil payload sends no body; a nil out skips decoding
 // the response (used for writes that don't return anything useful).
 func (c *Client) do(method, url, contentType string, payload, out any) error {
+	_, err := c.send(method, url, contentType, nil, payload, out)
+	return err
+}
+
+// send is do for requests that need extra request headers or the response
+// headers, such as the ETag guarding wiki page edits.
+func (c *Client) send(method, url, contentType string, headers map[string]string, payload, out any) (http.Header, error) {
 	var body io.Reader
 	if payload != nil {
 		data, err := json.Marshal(payload)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		body = bytes.NewReader(data)
 	}
 
 	req, err := http.NewRequest(method, url, body)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	req.Header.Set("Authorization", c.authHeader())
 	req.Header.Set("Accept", "application/json")
 	if contentType != "" {
 		req.Header.Set("Content-Type", contentType)
 	}
+	for name, value := range headers {
+		req.Header.Set(name, value)
+	}
 
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer resp.Body.Close()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	if resp.StatusCode >= 400 {
-		return fmt.Errorf("ADO %s %s: %d %s", method, url, resp.StatusCode, truncate(string(respBody), 200))
+		return resp.Header, &HTTPError{Method: method, URL: url, StatusCode: resp.StatusCode, Body: truncate(string(respBody), 200)}
 	}
 
 	if out == nil {
-		return nil
+		return resp.Header, nil
 	}
-	return json.Unmarshal(respBody, out)
+	return resp.Header, json.Unmarshal(respBody, out)
+}
+
+// HTTPError is a request ADO answered with an error status.
+type HTTPError struct {
+	Method     string
+	URL        string
+	StatusCode int
+	Body       string
+}
+
+func (e *HTTPError) Error() string {
+	return fmt.Sprintf("ADO %s %s: %d %s", e.Method, e.URL, e.StatusCode, e.Body)
 }
 
 func (c *Client) get(url string, out any) error {
@@ -424,7 +451,7 @@ func (c *Client) TeamDefaultAreaPath() (string, error) {
 
 // connectionData describes the PAT owner as seen by the organisation.
 func (c *Client) connectionData() (ConnectionData, error) {
-	connectionURL := fmt.Sprintf("https://dev.azure.com/%s/_apis/connectionData", url.PathEscape(c.org))
+	connectionURL := fmt.Sprintf("%s/%s/_apis/connectionData", c.host, url.PathEscape(c.org))
 	var data ConnectionData
 	err := c.get(connectionURL, &data)
 	return data, err

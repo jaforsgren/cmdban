@@ -158,9 +158,30 @@ func (b *Board) LaneColumns() []Column {
 	return columns
 }
 
+// Wiki is an Azure DevOps wiki page shown in wiki mode together with the
+// pages beneath it. Wikis are kept apart from boards: they never show up in
+// the board switcher. A PageID of 0 means the wiki's root.
+type Wiki struct {
+	Name    string `yaml:"name"`
+	Org     string `yaml:"org"`
+	Project string `yaml:"project"`
+	Wiki    string `yaml:"wiki"`
+	PageID  int    `yaml:"page_id,omitempty"`
+	PAT     string `yaml:"pat"`
+}
+
+// SamePage reports whether both entries point at the same wiki page.
+func (w Wiki) SamePage(other Wiki) bool {
+	return strings.EqualFold(w.Org, other.Org) &&
+		strings.EqualFold(w.Project, other.Project) &&
+		strings.EqualFold(w.Wiki, other.Wiki) &&
+		w.PageID == other.PageID
+}
+
 type Config struct {
 	CurrentBoard string   `yaml:"current_board"`
 	Boards       []Board  `yaml:"boards"`
+	Wikis        []Wiki   `yaml:"wikis,omitempty"`
 	IgnoreFiles  []string `yaml:"ignore_files,omitempty"`
 	RecentBoards []string `yaml:"recent_boards,omitempty"`
 	// LiveReloadSeconds is how often live reload re-syncs; 0 means the
@@ -290,7 +311,49 @@ func (c *Config) IsColumnHidden(column string) bool {
 var (
 	ErrBoardNotFound = errors.New("board not found")
 	ErrBoardExists   = errors.New("a board with that name already exists")
+	ErrWikiNotFound  = errors.New("wiki not found")
+	ErrWikiExists    = errors.New("that wiki page is already added")
 )
+
+// AddWiki appends wiki, refusing a page that is already in the list.
+func (c *Config) AddWiki(wiki Wiki) error {
+	for _, existing := range c.Wikis {
+		if existing.SamePage(wiki) {
+			return fmt.Errorf("%w: %q", ErrWikiExists, existing.Name)
+		}
+	}
+	c.Wikis = append(c.Wikis, wiki)
+	return nil
+}
+
+// RemoveWikiAt drops the wiki at index; it goes by position since wiki
+// names aren't required to be unique.
+func (c *Config) RemoveWikiAt(index int) error {
+	if index < 0 || index >= len(c.Wikis) {
+		return fmt.Errorf("%w: index %d", ErrWikiNotFound, index)
+	}
+	c.Wikis = slices.Delete(c.Wikis, index, index+1)
+	return nil
+}
+
+// PATForOrg names the PAT to use for org: the one an ADO board in that org
+// already uses, else the first stored one. It returns "" when neither exists.
+func (c *Config) PATForOrg(org string, storedPATs []string) string {
+	for _, board := range c.Boards {
+		if board.AzureDevOps != nil && strings.EqualFold(board.AzureDevOps.Org, org) && board.AzureDevOps.PAT != "" {
+			return board.AzureDevOps.PAT
+		}
+	}
+	for _, wiki := range c.Wikis {
+		if strings.EqualFold(wiki.Org, org) && wiki.PAT != "" {
+			return wiki.PAT
+		}
+	}
+	if len(storedPATs) > 0 {
+		return storedPATs[0]
+	}
+	return ""
+}
 
 // NoBoardIndex excludes no board when checking whether a name is taken.
 const NoBoardIndex = -1
