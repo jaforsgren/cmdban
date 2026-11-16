@@ -16,7 +16,7 @@ Press `?` inside cmdban for the same list, grouped by view.
 | `e` / `i` | Edit title |
 | `ctrl+g` | Open task in `$EDITOR` |
 | `d` | Toggle done |
-| `t` | Add tag |
+| `t` | Add tag — lists the board's tags matching what you type (all of them before you type); `↑`/`↓` or `ctrl+n`/`ctrl+p` pick, `tab` completes, `enter` adds |
 | `m` | Mark task |
 | `x` / `ctrl+d` | Delete task |
 | `H` / `L` | Move task left / right |

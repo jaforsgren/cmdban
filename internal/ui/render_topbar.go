@@ -430,7 +430,7 @@ func shortcutsForMode(mode Mode) []shortcut {
 	case ModeInput, ModeCommand, ModeADOSetup:
 		return []shortcut{{"enter", "confirm"}, {"esc", "cancel"}, {taskNavigationKeys, "navigate lists"}}
 	case ModeTag:
-		return []shortcut{{"enter", "add tag"}, {"tab", "complete"}, {"esc", "cancel"}}
+		return []shortcut{{"enter", "add tag"}, {"↑/↓", "pick"}, {"tab", "complete"}, {"esc", "cancel"}}
 	case ModeSearch:
 		return []shortcut{{"enter", "apply"}, {"esc", "clear"}}
 	case ModeConfirm:

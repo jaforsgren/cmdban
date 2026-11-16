@@ -323,26 +323,46 @@ func (c *Client) FetchWorkItemsByIDs(ids []int, extraFields ...string) ([]WorkIt
 	return all, nil
 }
 
+func (c *Client) workItemURL(id int) string {
+	return fmt.Sprintf("%s/_apis/wit/workitems/%d?api-version=%s", c.baseURL(), id, apiVersion)
+}
+
 func (c *Client) UpdateWorkItemPlacement(id int, placement Placement) error {
-	url := fmt.Sprintf("%s/_apis/wit/workitems/%d?api-version=%s", c.baseURL(), id, apiVersion)
-	return c.patchJSON(url, "application/json-patch+json", placement.patchOperations(), nil)
+	return c.patchJSON(c.workItemURL(id), "application/json-patch+json", placement.patchOperations(), nil)
 }
 
 func (c *Client) UpdateWorkItemTitle(id int, title string) error {
-	url := fmt.Sprintf("%s/_apis/wit/workitems/%d?api-version=%s", c.baseURL(), id, apiVersion)
 	ops := []PatchOperation{
 		{Op: "add", Path: "/fields/System.Title", Value: title},
 	}
-	return c.patchJSON(url, "application/json-patch+json", ops, nil)
+	return c.patchJSON(c.workItemURL(id), "application/json-patch+json", ops, nil)
 }
 
 func (c *Client) UpdateWorkItemTitleAndDescription(id int, title, description string) error {
-	url := fmt.Sprintf("%s/_apis/wit/workitems/%d?api-version=%s", c.baseURL(), id, apiVersion)
 	ops := []PatchOperation{
 		{Op: "add", Path: "/fields/System.Title", Value: title},
 		{Op: "add", Path: "/fields/System.Description", Value: description},
 	}
-	return c.patchJSON(url, "application/json-patch+json", ops, nil)
+	return c.patchJSON(c.workItemURL(id), "application/json-patch+json", ops, nil)
+}
+
+// FetchWorkItemTags reads a work item's current tags straight from ADO, so a
+// tag write starts from what the server has rather than a stale board sync.
+func (c *Client) FetchWorkItemTags(id int) ([]string, error) {
+	var item WorkItem
+	if err := c.get(c.workItemURL(id)+"&fields="+fieldTags, &item); err != nil {
+		return nil, err
+	}
+	return parseTags(item.Fields.Tags), nil
+}
+
+// UpdateWorkItemTags replaces the work item's whole tag list; ADO has no
+// operation that appends a single tag.
+func (c *Client) UpdateWorkItemTags(id int, tags []string) error {
+	ops := []PatchOperation{
+		{Op: "add", Path: "/fields/" + fieldTags, Value: formatTags(tags)},
+	}
+	return c.patchJSON(c.workItemURL(id), "application/json-patch+json", ops, nil)
 }
 
 func (c *Client) CreateWorkItem(newItem NewWorkItem) (*WorkItem, error) {

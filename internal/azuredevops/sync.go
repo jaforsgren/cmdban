@@ -334,17 +334,13 @@ func workItemToTask(item WorkItem, cfg *config.AzureDevOpsConfig) *task.Task {
 	createdAt, _ := time.Parse(time.RFC3339, f.CreatedDate)
 	updatedAt, _ := time.Parse(time.RFC3339, f.ChangedDate)
 
+	adoTags := parseTags(f.Tags)
 	var tags []string
 	tags = append(tags, f.WorkItemType)
 	if assignee != "" {
 		tags = append(tags, assignee)
 	}
-	for _, rawTag := range strings.Split(f.Tags, ";") {
-		rawTag = strings.TrimSpace(rawTag)
-		if rawTag != "" {
-			tags = append(tags, rawTag)
-		}
-	}
+	tags = append(tags, adoTags...)
 
 	return &task.Task{
 		ID:              fmt.Sprintf("ado-%d", f.ID),
@@ -353,6 +349,7 @@ func workItemToTask(item WorkItem, cfg *config.AzureDevOpsConfig) *task.Task {
 		ReproSteps:      reproSteps,
 		Status:          lane,
 		Tags:            tags,
+		ADOTags:         adoTags,
 		FilePath:        "",
 		ADOItemID:       f.ID,
 		ADOParentID:     f.Parent,
@@ -422,6 +419,26 @@ func UpdateRemoteTitle(adoCfg *config.AzureDevOpsConfig, pat string, t *task.Tas
 	client := NewClient(adoCfg.Org, adoCfg.Project, adoCfg.Team, pat)
 	if err := client.UpdateWorkItemTitle(t.ADOItemID, title); err != nil {
 		return fmt.Errorf("updating work item %d title: %w", t.ADOItemID, err)
+	}
+	return nil
+}
+
+// AddRemoteTag adds tag to the work item's System.Tags, keeping the tags it
+// already has in ADO. A tag already present (in any letter case) is left as is.
+func AddRemoteTag(adoCfg *config.AzureDevOpsConfig, pat string, t *task.Task, tag string) error {
+	if t.ADOItemID == 0 {
+		return fmt.Errorf("task %q has no ADO item ID", t.ID)
+	}
+	client := NewClient(adoCfg.Org, adoCfg.Project, adoCfg.Team, pat)
+	current, err := client.FetchWorkItemTags(t.ADOItemID)
+	if err != nil {
+		return fmt.Errorf("reading work item %d tags: %w", t.ADOItemID, err)
+	}
+	if HasTag(current, tag) {
+		return nil
+	}
+	if err := client.UpdateWorkItemTags(t.ADOItemID, append(current, tag)); err != nil {
+		return fmt.Errorf("updating work item %d tags: %w", t.ADOItemID, err)
 	}
 	return nil
 }

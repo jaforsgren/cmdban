@@ -1,6 +1,7 @@
 package azuredevops
 
 import (
+	"reflect"
 	"testing"
 
 	"cmdban/internal/config"
@@ -364,5 +365,31 @@ func TestWithoutRemovedItemsDropsRemovedState(t *testing.T) {
 
 	if len(got) != 2 || got[0].ID != 1 || got[1].ID != 4 {
 		t.Fatalf("withoutRemovedItems() = %+v, want items 1 and 4", got)
+	}
+}
+
+func TestWorkItemToTaskSeparatesADOTagsFromTypeAndAssignee(t *testing.T) {
+	cfg := &config.AzureDevOpsConfig{ColumnMap: map[string]string{"today": "Active"}}
+	item := WorkItem{Fields: WorkItemFields{
+		ID: 7, State: "Active", WorkItemType: "Bug",
+		AssignedTo: &IdentityRef{DisplayName: "Jane Doe"},
+		Tags:       "api; otel",
+	}}
+
+	got := workItemToTask(item, cfg)
+
+	if want := []string{"api", "otel"}; !reflect.DeepEqual(got.ADOTags, want) {
+		t.Fatalf("ADOTags = %v, want %v", got.ADOTags, want)
+	}
+	if want := []string{"Bug", "Jane Doe", "api", "otel"}; !reflect.DeepEqual(got.Tags, want) {
+		t.Fatalf("Tags = %v, want %v", got.Tags, want)
+	}
+}
+
+func TestAddRemoteTagRejectsTaskWithoutADOItemID(t *testing.T) {
+	cfg := &config.AzureDevOpsConfig{Org: "org", Project: "proj", Team: "team"}
+
+	if err := AddRemoteTag(cfg, "pat", &task.Task{ID: "local-1"}, "api"); err == nil {
+		t.Fatal("AddRemoteTag() error = nil, want an error for a task with no ADO item ID")
 	}
 }

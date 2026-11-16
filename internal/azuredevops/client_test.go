@@ -300,3 +300,28 @@ func TestWorkItemFieldListAppendsExtraFields(t *testing.T) {
 		t.Fatalf("workItemFieldList() = %q, want %q", got, want)
 	}
 }
+
+func TestParseTagsTrimsAndDropsEmptyEntries(t *testing.T) {
+	got := parseTags(" api ;otel;; ")
+
+	if want := []string{"api", "otel"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("parseTags() = %v, want %v", got, want)
+	}
+}
+
+func TestFormatTagsRoundTripsThroughParseTags(t *testing.T) {
+	tags := []string{"api", "two words"}
+
+	if got := parseTags(formatTags(tags)); !reflect.DeepEqual(got, tags) {
+		t.Fatalf("parseTags(formatTags()) = %v, want %v", got, tags)
+	}
+}
+
+func TestHasTagIgnoresCase(t *testing.T) {
+	if !HasTag([]string{"API"}, "api") {
+		t.Fatal("HasTag() = false, want true for a case-only difference")
+	}
+	if HasTag([]string{"api"}, "apis") {
+		t.Fatal("HasTag() = true, want false for a different tag")
+	}
+}

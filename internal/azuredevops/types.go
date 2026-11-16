@@ -163,6 +163,39 @@ func (w NewWorkItem) patchOperations() []PatchOperation {
 	return append(ops, w.Placement.patchOperations()...)
 }
 
+const (
+	fieldTags = "System.Tags"
+	// tagSeparator splits System.Tags; ADO writes "; " between tags and
+	// accepts ";" with or without the space on input.
+	tagSeparator       = ";"
+	tagOutputSeparator = tagSeparator + " "
+)
+
+func parseTags(raw string) []string {
+	var tags []string
+	for _, tag := range strings.Split(raw, tagSeparator) {
+		if tag = strings.TrimSpace(tag); tag != "" {
+			tags = append(tags, tag)
+		}
+	}
+	return tags
+}
+
+func formatTags(tags []string) string {
+	return strings.Join(tags, tagOutputSeparator)
+}
+
+// HasTag reports whether tags contains tag, ignoring case the way ADO does
+// when it matches tags.
+func HasTag(tags []string, tag string) bool {
+	for _, existing := range tags {
+		if strings.EqualFold(existing, tag) {
+			return true
+		}
+	}
+	return false
+}
+
 type PatchOperation struct {
 	Op    string `json:"op"`
 	Path  string `json:"path"`

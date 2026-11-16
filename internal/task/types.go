@@ -35,6 +35,9 @@ type Task struct {
 	ADOParentID     int
 	ADOWorkItemType string
 	ADOCommentCount int
+	// ADOTags are the work item's System.Tags only; Tags also carries the
+	// work item type and assignee for display and search.
+	ADOTags []string
 	// ExtraMetadata holds footer entries cmdban has no schema for (or whose
 	// value didn't fit the schema), in file order, so rewriting a task never
 	// drops metadata written by a newer cmdban or by hand.

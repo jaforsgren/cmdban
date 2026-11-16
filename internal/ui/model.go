@@ -98,8 +98,7 @@ type Model struct {
 	message            string
 	gPressed           bool
 	err                error
-	tagSuggestions     []string
-	tagSuggestion      string
+	tagAutocomplete    tagAutocomplete
 	searchFilter       string
 	typeFilter         typeFilter
 	boardSelectorIndex int
@@ -559,20 +558,8 @@ func (m Model) handleNormalMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.toggleTaskDone()
 
 	case key.Matches(msg, m.keys.Tag):
-		if m.selectedTask() != nil {
-			if m.config.IsADOBoard() {
-				m.message = "Tags are managed in Azure DevOps"
-				return m, nil
-			}
-			m.mode = ModeTag
-			m.textInput.Reset()
-			m.textInput.Placeholder = "tag name..."
-			m.textInput.EchoMode = textinput.EchoNormal
-			m.textInput.Focus()
-			m.tagSuggestions = m.collectAllTags()
-			m.tagSuggestion = ""
-			m.gPressed = false
-			return m, textinput.Blink
+		if t := m.selectedTask(); t != nil {
+			return m.enterTagMode(t)
 		}
 
 	case key.Matches(msg, m.keys.Mark):
@@ -1075,20 +1062,8 @@ func (m Model) handleFocusMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.toggleTaskDone()
 
 	case key.Matches(msg, m.keys.Tag):
-		if m.selectedTask() != nil {
-			if m.config.IsADOBoard() {
-				m.message = "Tags are managed in Azure DevOps"
-				return m, nil
-			}
-			m.mode = ModeTag
-			m.textInput.Reset()
-			m.textInput.Placeholder = "tag name..."
-			m.textInput.EchoMode = textinput.EchoNormal
-			m.textInput.Focus()
-			m.tagSuggestions = m.collectAllTags()
-			m.tagSuggestion = ""
-			m.gPressed = false
-			return m, textinput.Blink
+		if t := m.selectedTask(); t != nil {
+			return m.enterTagMode(t)
 		}
 
 	case key.Matches(msg, m.keys.Mark):
@@ -1135,34 +1110,57 @@ func (m Model) handleFocusMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m Model) enterTagMode(t *task.Task) (tea.Model, tea.Cmd) {
+	m.mode = ModeTag
+	m.gPressed = false
+	m.textInput.Reset()
+	m.textInput.Placeholder = "tag name..."
+	m.textInput.EchoMode = textinput.EchoNormal
+	m.textInput.Focus()
+	m.tagAutocomplete = newTagAutocomplete(m.tagCandidates(t))
+	return m, textinput.Blink
+}
+
+// handleTagMode leaves j/k to the text input, since they are valid tag
+// characters; the suggestion list is walked with the arrow keys or ctrl+n/p.
 func (m Model) handleTagMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch {
-	case key.Matches(msg, m.keys.Escape):
+	switch msg.String() {
+	case "esc":
 		m.mode = ModeNormal
 		m.textInput.Reset()
-		m.tagSuggestion = ""
 		return m, nil
 
-	case msg.String() == "tab":
-		if m.tagSuggestion != "" {
-			m.textInput.SetValue(m.tagSuggestion)
-			m.textInput.SetCursor(len(m.tagSuggestion))
-			m.tagSuggestion = ""
+	case "down", "ctrl+n":
+		m.tagAutocomplete.moveSelection(1)
+		return m, nil
+
+	case "up", "ctrl+p":
+		m.tagAutocomplete.moveSelection(-1)
+		return m, nil
+
+	case "tab":
+		if tag, ok := m.tagAutocomplete.completion(); ok {
+			m.textInput.SetValue(tag)
+			m.textInput.CursorEnd()
+			m.tagAutocomplete.filter(tag)
 		}
 		return m, nil
 
-	case key.Matches(msg, m.keys.Enter):
-		value := strings.TrimSpace(m.textInput.Value())
-		if value == "" {
+	case "enter":
+		tag, ok := m.tagAutocomplete.selection()
+		if !ok {
+			tag = strings.TrimSpace(m.textInput.Value())
+		}
+		if tag == "" {
 			m.mode = ModeNormal
 			return m, nil
 		}
-		return m.addTagToTask(value)
+		return m.addTagToTask(tag)
 	}
 
 	var cmd tea.Cmd
 	m.textInput, cmd = m.textInput.Update(msg)
-	m.tagSuggestion = m.findTagSuggestion(m.textInput.Value())
+	m.tagAutocomplete.filter(m.textInput.Value())
 	return m, cmd
 }
 
@@ -1269,34 +1267,34 @@ func (m Model) filterTasks(tasks []*task.Task) []*task.Task {
 	return filtered
 }
 
-func (m Model) collectAllTags() []string {
-	tagSet := make(map[string]bool)
-	for _, lane := range m.board.Lanes {
-		for _, t := range m.board.Tasks[lane] {
-			for _, tag := range t.Tags {
-				tagSet[tag] = true
+// assignableTags are the tags t carries that the user can set: on ADO boards
+// only System.Tags, not the work item type and assignee shown beside them.
+func (m Model) assignableTags(t *task.Task) []string {
+	if m.config.IsADOBoard() {
+		return t.ADOTags
+	}
+	return t.Tags
+}
+
+// tagCandidates are the assignable tags used anywhere on the board that t
+// doesn't carry yet.
+func (m Model) tagCandidates(t *task.Task) []string {
+	current := m.assignableTags(t)
+	seen := make(map[string]bool)
+	var candidates []string
+	for _, lane := range m.board.AllColumns {
+		for _, other := range m.board.Tasks[lane] {
+			for _, tag := range m.assignableTags(other) {
+				key := strings.ToLower(tag)
+				if seen[key] || azuredevops.HasTag(current, tag) {
+					continue
+				}
+				seen[key] = true
+				candidates = append(candidates, tag)
 			}
 		}
 	}
-
-	tags := make([]string, 0, len(tagSet))
-	for tag := range tagSet {
-		tags = append(tags, tag)
-	}
-	return tags
-}
-
-func (m Model) findTagSuggestion(input string) string {
-	if input == "" {
-		return ""
-	}
-	input = strings.ToLower(input)
-	for _, tag := range m.tagSuggestions {
-		if strings.HasPrefix(strings.ToLower(tag), input) && strings.ToLower(tag) != input {
-			return tag
-		}
-	}
-	return ""
+	return candidates
 }
 
 func (m Model) addTagToTask(tag string) (tea.Model, tea.Cmd) {
@@ -1306,10 +1304,23 @@ func (m Model) addTagToTask(tag string) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	for _, existingTag := range t.Tags {
-		if existingTag == tag {
-			m.message = "Tag already exists"
-			return m, nil
+	if azuredevops.HasTag(m.assignableTags(t), tag) {
+		m.message = "Tag already exists"
+		return m, nil
+	}
+
+	if m.config.IsADOBoard() {
+		adoCfg := m.config.ActiveBoard().AzureDevOps
+		m.message = fmt.Sprintf("Adding tag %q in Azure DevOps...", tag)
+		return m, func() tea.Msg {
+			token, ok := m.patStore.Get(adoCfg.PAT)
+			if !ok {
+				return errMsg{fmt.Errorf("PAT %q not found — run :pats to add it", adoCfg.PAT)}
+			}
+			if err := azuredevops.AddRemoteTag(adoCfg, token, t, tag); err != nil {
+				return errMsg{err}
+			}
+			return taskSavedMsg{t}
 		}
 	}
 
@@ -2515,15 +2526,8 @@ func (m Model) renderFooter() string {
 	}
 
 	if m.mode == ModeTag {
-		inputValue := m.textInput.Value()
-		suggestion := ""
-		if m.tagSuggestion != "" && len(inputValue) > 0 {
-			suggestion = lipgloss.NewStyle().
-				Foreground(SubtleColor).
-				Render(m.tagSuggestion[len(inputValue):] + " (tab)")
-		}
-		input := InputStyle.Render("@" + m.textInput.View() + suggestion)
-		return input
+		input := InputStyle.Render("@" + m.textInput.View())
+		return lipgloss.JoinVertical(lipgloss.Left, m.tagAutocomplete.render(), input)
 	}
 
 	if m.mode == ModeSearch {
