@@ -49,6 +49,8 @@ type KeyMap struct {
 	CommentsPane    key.Binding
 	CommentsDown    key.Binding
 	CommentsUp      key.Binding
+	Fold            key.Binding
+	FoldAll         key.Binding
 }
 
 var DefaultKeyMap = KeyMap{
@@ -235,5 +237,13 @@ var DefaultKeyMap = KeyMap{
 	CommentsUp: key.NewBinding(
 		key.WithKeys("K"),
 		key.WithHelp("K", "scroll comments up"),
+	),
+	Fold: key.NewBinding(
+		key.WithKeys("z"),
+		key.WithHelp("z", "expand / fold"),
+	),
+	FoldAll: key.NewBinding(
+		key.WithKeys("Z"),
+		key.WithHelp("Z", "expand / fold everything beneath"),
 	),
 }

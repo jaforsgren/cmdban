@@ -470,7 +470,8 @@ func shortcutsForMode(mode Mode) []shortcut {
 		return []shortcut{{"a", "add comment"}, {taskNavigationKeys, "scroll"}, {topBottomKeys, "top/bottom"}, {closeKey, "close"}}
 	case ModeWiki:
 		return []shortcut{
-			{taskNavigationKeys, "select page"}, {"l", "expand / step in"}, {"h", "collapse / step out"}, {"enter", "read page"}, {"tab", "preview"},
+			{taskNavigationKeys, "select page"}, {"l", "expand / step in"}, {"h", "collapse / step out"},
+			{"z", "expand / fold"}, {"Z", "expand / fold all beneath"}, {"enter", "read page"}, {"tab", "preview"},
 			{"ctrl+u/ctrl+f", "scroll preview"}, {"ctrl+g", "edit in nvim"}, {"M", "page as markdown"}, {"ctrl+o", "open page in browser"},
 			{"r", "refresh"}, {"a", "add wiki"}, {"x", "remove wiki"}, {closeKey, "back to board"},
 		}

@@ -359,3 +359,34 @@ func TestAFailedWikiShowsItsErrorOnItsLine(t *testing.T) {
 		t.Fatalf("wiki list missing the error:\n%s", view)
 	}
 }
+
+func TestZTogglesTheSelectedPageOnly(t *testing.T) {
+	m := pressKey(t, wikiTestModel(t, wikiTestConfig()), "z")
+	if got, want := rowTitles(m), []string{"Krav", "Insurify", "Pay later", "Guides"}; !slices.Equal(got, want) {
+		t.Fatalf("rows after z = %v, want %v", got, want)
+	}
+	if got := selectedTitle(t, m); got != "Krav" {
+		t.Fatalf("selected = %q, want z to keep the selection", got)
+	}
+	if m = pressKey(t, m, "z"); !slices.Equal(rowTitles(m), []string{"Krav", "Guides"}) {
+		t.Fatalf("rows after second z = %v, want Krav folded", rowTitles(m))
+	}
+}
+
+func TestShiftZExpandsEverythingBeneathThenFoldsItAll(t *testing.T) {
+	m := pressKey(t, wikiTestModel(t, wikiTestConfig()), "Z")
+	want := []string{"Krav", "Insurify", "SIE", "Regler", "Pay later", "Guides"}
+	if got := rowTitles(m); !slices.Equal(got, want) {
+		t.Fatalf("rows after Z = %v, want %v", got, want)
+	}
+	if m = pressKey(t, m, "Z"); !slices.Equal(rowTitles(m), []string{"Krav", "Guides"}) {
+		t.Fatalf("rows after second Z = %v, want everything folded", rowTitles(m))
+	}
+}
+
+func TestShiftZOpensTheRestWhenOnlySomeIsOpen(t *testing.T) {
+	m := pressKey(t, pressKey(t, wikiTestModel(t, wikiTestConfig()), "z"), "Z")
+	if got := len(rowTitles(m)); got != 6 {
+		t.Fatalf("rows after z then Z = %d, want everything beneath Krav open (6)", got)
+	}
+}

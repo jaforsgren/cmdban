@@ -320,6 +320,52 @@ func (m Model) collapseWikiPage() (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// toggleWikiFold opens or folds the selected page's sub pages, keeping the
+// selection where it is.
+func (m Model) toggleWikiFold() (tea.Model, tea.Cmd) {
+	row, ok := m.selectedWikiPage()
+	if !ok || !row.hasSubPages() {
+		return m, nil
+	}
+	if m.wiki.expanded[row.key] {
+		delete(m.wiki.expanded, row.key)
+	} else {
+		m.wiki.expanded[row.key] = true
+	}
+	return m, nil
+}
+
+// toggleWikiFoldAll opens the selected page and every page beneath it, or
+// folds them all when they are already all open.
+func (m Model) toggleWikiFoldAll() (tea.Model, tea.Cmd) {
+	row, ok := m.selectedWikiPage()
+	if !ok || !row.hasSubPages() {
+		return m, nil
+	}
+	keys := wikiParentKeys(row.key.wiki, *row.page)
+	allExpanded := !slices.ContainsFunc(keys, func(k wikiPageKey) bool { return !m.wiki.expanded[k] })
+	for _, k := range keys {
+		if allExpanded {
+			delete(m.wiki.expanded, k)
+		} else {
+			m.wiki.expanded[k] = true
+		}
+	}
+	return m, nil
+}
+
+// wikiParentKeys lists page and every page beneath it that has sub pages.
+func wikiParentKeys(wiki string, page azuredevops.WikiPage) []wikiPageKey {
+	if len(page.SubPages) == 0 {
+		return nil
+	}
+	keys := []wikiPageKey{{wiki: wiki, path: page.Path}}
+	for _, sub := range page.SubPages {
+		keys = append(keys, wikiParentKeys(wiki, sub)...)
+	}
+	return keys
+}
+
 // loadSelectedWikiPage fetches the selected page's content when a preview
 // or the page view is showing it and it isn't cached yet.
 func (m Model) loadSelectedWikiPage() (tea.Model, tea.Cmd) {
@@ -671,6 +717,10 @@ func (m Model) handleWikiMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.expandWikiPage()
 	case key.Matches(msg, m.keys.Left):
 		return m.collapseWikiPage()
+	case key.Matches(msg, m.keys.Fold):
+		return m.toggleWikiFold()
+	case key.Matches(msg, m.keys.FoldAll):
+		return m.toggleWikiFoldAll()
 	case key.Matches(msg, m.keys.Enter):
 		return m.openWikiPageView()
 	case key.Matches(msg, m.keys.Focus):

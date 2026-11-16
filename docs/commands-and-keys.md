@@ -94,6 +94,8 @@ Most board keys (`a`, `b`, `e`, `t`, `m`, `c`, `M`, `H` / `L`) work here too.
 | `j` / `k`, `gg` / `G` | Select page |
 | `l` / `→` | Expand the page (▸ → ▾); on an expanded page, step into its first sub page |
 | `h` / `←` | Collapse the page; on a collapsed page, step out to its parent |
+| `z` | Expand or fold the selected page, keeping the selection |
+| `Z` | Expand the selected page and everything beneath it; when all of it is already open, fold it all |
 | `enter` | Read the page full screen (`j` / `k` scroll, `q` back) |
 | `tab` | Toggle a preview of the selected page beside the tree (`ctrl+u` / `ctrl+f` scroll it) |
 | `ctrl+g` | Edit the page in `$EDITOR`; on save you're asked before the change is published to Azure DevOps |
