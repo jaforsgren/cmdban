@@ -219,5 +219,5 @@ func (m Model) buildWikiContextInfo() []string {
 			)
 		}
 	}
-	return append(lines, topBarLine("🔄", "Synced", topBarValueStyle.Render(describeSync(m.wiki.lastSync))))
+	return append(lines, syncedLineFor(m.wiki.lastSync, m.wiki.watch))
 }

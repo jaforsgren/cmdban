@@ -390,3 +390,159 @@ func TestShiftZOpensTheRestWhenOnlySomeIsOpen(t *testing.T) {
 		t.Fatalf("rows after z then Z = %d, want everything beneath Krav open (6)", got)
 	}
 }
+
+func typeInto(t *testing.T, m Model, text string) Model {
+	t.Helper()
+	for _, r := range text {
+		m = pressKey(t, m, string(r))
+	}
+	return m
+}
+
+func pickerLabels(m Model) []string {
+	var labels []string
+	for _, result := range m.wiki.picker.results {
+		labels = append(labels, result.label)
+	}
+	return labels
+}
+
+func TestSpaceSpaceOpensThePageFinderListingEveryPage(t *testing.T) {
+	m := typeInto(t, wikiTestModel(t, wikiTestConfig()), "  ")
+	if m.mode != ModeWikiPicker || m.wiki.picker.kind != wikiPickerFindPages {
+		t.Fatalf("mode = %v, kind = %v; want the page finder", m.mode, m.wiki.picker.kind)
+	}
+	want := []string{"Krav", "Krav › Insurify", "Krav › Insurify › SIE", "Krav › Insurify › Regler", "Krav › Pay later"}
+	if got := pickerLabels(m); !slices.Equal(got, want) {
+		t.Fatalf("results = %v, want every loaded page %v", got, want)
+	}
+}
+
+func TestPageFinderFuzzyMatchesBreadcrumbs(t *testing.T) {
+	m := typeInto(t, wikiTestModel(t, wikiTestConfig()), "  insie")
+	if got := pickerLabels(m); len(got) == 0 || got[0] != "Krav › Insurify › SIE" {
+		t.Fatalf("results = %v, want Insurify › SIE first", got)
+	}
+}
+
+func TestSpaceFollowedByAnotherKeyCancelsTheLeader(t *testing.T) {
+	m := typeInto(t, wikiTestModel(t, wikiTestConfig()), " q")
+	if m.mode != ModeWiki || m.wiki.leader != "" {
+		t.Fatalf("mode = %v, leader = %q; want the sequence dropped without leaving wiki mode", m.mode, m.wiki.leader)
+	}
+}
+
+func TestEnterOnAFoundPageRevealsItInTheTreeAndReadsIt(t *testing.T) {
+	m := typeInto(t, wikiTestModel(t, wikiTestConfig()), "  regler")
+	m = update(t, m, tea.KeyMsg{Type: tea.KeyEnter})
+
+	if m.mode != ModeWikiView {
+		t.Fatalf("mode = %v, want the page view", m.mode)
+	}
+	if got := selectedTitle(t, m); got != "Regler" {
+		t.Fatalf("selected = %q, want Regler", got)
+	}
+	if m = pressKey(t, m, "q"); !slices.Contains(rowTitles(m), "Regler") {
+		t.Fatalf("rows = %v, want Regler's parents expanded", rowTitles(m))
+	}
+}
+
+func TestEscClosesThePickerBackToTheTree(t *testing.T) {
+	m := typeInto(t, wikiTestModel(t, wikiTestConfig()), "  ")
+	if m = update(t, m, tea.KeyMsg{Type: tea.KeyEsc}); m.mode != ModeWiki {
+		t.Fatalf("mode = %v, want ModeWiki", m.mode)
+	}
+}
+
+func TestSpaceSGReadsEveryPageAndGrepsTheirLines(t *testing.T) {
+	m := wikiTestModel(t, wikiTestConfig())
+	m = pressKey(t, pressKey(t, m, " "), "s")
+	got, cmd := m.Update(keyMsgFor("g"))
+	m = got.(Model)
+	if m.mode != ModeWikiPicker || m.wiki.picker.kind != wikiPickerGrep || cmd == nil {
+		t.Fatalf("mode = %v, kind = %v, cmd = %v; want grep fetching the pages", m.mode, m.wiki.picker.kind, cmd)
+	}
+	if len(m.wiki.loadingPages) != 5 {
+		t.Fatalf("loading %d pages, want all 5", len(m.wiki.loadingPages))
+	}
+
+	id := wikiID(m.config.Wikis[0])
+	m = update(t, m, wikiPageLoadedMsg{key: wikiPageKey{wiki: id, path: "/Krav/Pay later"}, content: azuredevops.WikiPageContent{Content: "intro\n  Pay with Klarna later\nnothing"}})
+	m = update(t, m, wikiPageLoadedMsg{key: wikiPageKey{wiki: id, path: "/Krav/Insurify/SIE"}, content: azuredevops.WikiPageContent{Content: "klarna export"}})
+	m = typeInto(t, m, "klarna")
+
+	results := m.wiki.picker.results
+	if len(results) != 2 {
+		t.Fatalf("results = %+v, want both lines mentioning klarna", results)
+	}
+	if results[1].line != 1 || !strings.Contains(m.renderWikiPicker(), "Pay later:2:") {
+		t.Fatalf("results = %+v, want the hit on line 2 of Pay later shown as such", results)
+	}
+}
+
+func TestGrepIsCaseSensitiveOnlyWithUpperCase(t *testing.T) {
+	if start, _ := smartCaseIndex("Pay with Klarna", "klarna"); start != 9 {
+		t.Fatalf("lower case query start = %d, want 9", start)
+	}
+	if start, _ := smartCaseIndex("pay with klarna", "Klarna"); start != -1 {
+		t.Fatalf("upper case query start = %d, want no match", start)
+	}
+	if start, length := smartCaseIndex("ÖPPNA frågor", "öppna"); start != 0 || length != len("ÖPPNA") {
+		t.Fatalf("start, length = %d, %d; want ÖPPNA matched ignoring case", start, length)
+	}
+	if start, length := smartCaseIndex("öppna frågor", "frå"); start != len("öppna ") || length != len("frå") {
+		t.Fatalf("start, length = %d, %d; want frå matched past the å", start, length)
+	}
+}
+
+func TestShiftRTogglesWikiWatch(t *testing.T) {
+	m := pressKey(t, wikiTestModel(t, wikiTestConfig()), "R")
+	if !m.wiki.watch {
+		t.Fatal("watch off after R, want on")
+	}
+	if m.liveReload {
+		t.Fatal("board live reload turned on, want wiki watch kept separate")
+	}
+
+	_, cmd := m.Update(wikiWatchTickMsg{generation: m.wiki.watchGeneration})
+	if cmd == nil {
+		t.Fatal("watch tick did nothing, want a refresh")
+	}
+	if m = pressKey(t, m, "R"); m.wiki.watch {
+		t.Fatal("watch on after second R, want off")
+	}
+	if _, cmd := m.Update(wikiWatchTickMsg{generation: m.wiki.watchGeneration - 1}); cmd != nil {
+		t.Fatal("stale watch tick refreshed, want it dropped")
+	}
+}
+
+func TestWatchRefreshKeepsTheMessageAndCachedPreview(t *testing.T) {
+	m := pressKey(t, wikiTestModel(t, wikiTestConfig()), "R")
+	key := wikiPageKey{wiki: wikiID(m.config.Wikis[0]), path: "/Krav"}
+	m.wiki.pages[key] = azuredevops.WikiPageContent{Content: "old"}
+	m.message = "keep me"
+
+	m.refreshWikisInBackground()
+	m = update(t, m, wikiTreeLoadedMsg{wiki: key.wiki, root: wikiTestTree(), background: true})
+
+	if m.message != "keep me" || m.wiki.pages[key].Content != "old" {
+		t.Fatalf("message = %q, page = %q; want both kept until new content arrives", m.message, m.wiki.pages[key].Content)
+	}
+	if !m.wiki.loadingPages[key] {
+		t.Fatal("cached page not refetched by the watch refresh")
+	}
+}
+
+func TestPageFinderRanksTitleMatchesFirst(t *testing.T) {
+	candidates := []wikiPickerResult{
+		{key: wikiPageKey{path: "/Krav/Sanktion i appen"}, label: "Krav › Sanktion i appen"},
+		{key: wikiPageKey{path: "/Krav/Insurify/SIE Filer"}, label: "Krav › Insurify › SIE Filer"},
+	}
+	got := findWikiPages(candidates, "sie")
+	if len(got) != 2 || got[0].label != "Krav › Insurify › SIE Filer" {
+		t.Fatalf("results = %+v, want the page titled SIE first", got)
+	}
+	if want := byteRange(len("Krav › Insurify › "), len("SIE")); !slices.Equal(got[0].matches, want) {
+		t.Fatalf("matches = %v, want the title's SIE highlighted %v", got[0].matches, want)
+	}
+}

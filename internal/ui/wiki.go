@@ -89,6 +89,11 @@ type wikiState struct {
 	// from.
 	returnMode  Mode
 	pendingEdit wikiEdit
+	// leader is the space-led key sequence typed so far.
+	leader          string
+	picker          wikiPicker
+	watch           bool
+	watchGeneration int
 }
 
 func newWikiState() wikiState {
@@ -106,6 +111,9 @@ type wikiTreeLoadedMsg struct {
 	wiki string
 	root azuredevops.WikiPage
 	err  error
+	// background marks a watch refresh, which leaves the footer message
+	// alone.
+	background bool
 }
 
 type wikiPageLoadedMsg struct {
@@ -133,7 +141,7 @@ type wikiPagePublishedMsg struct {
 }
 
 func isWikiMode(mode Mode) bool {
-	return mode == ModeWiki || mode == ModeWikiView
+	return mode == ModeWiki || mode == ModeWikiView || mode == ModeWikiPicker
 }
 
 func isWikiInputAction(action string) bool {
@@ -183,20 +191,20 @@ func (m Model) syncWikis() (tea.Model, tea.Cmd) {
 		tree := m.wiki.trees[wikiID(w)]
 		tree.loading = true
 		m.wiki.trees[wikiID(w)] = tree
-		cmds[i] = m.fetchWikiTree(w)
+		cmds[i] = m.fetchWikiTree(w, false)
 	}
 	m.message = "Syncing wikis..."
 	return m, tea.Batch(cmds...)
 }
 
-func (m Model) fetchWikiTree(w config.Wiki) tea.Cmd {
+func (m Model) fetchWikiTree(w config.Wiki, background bool) tea.Cmd {
 	return func() tea.Msg {
 		token, err := m.lookupPAT(w.PAT)
 		if err != nil {
-			return wikiTreeLoadedMsg{wiki: wikiID(w), err: err}
+			return wikiTreeLoadedMsg{wiki: wikiID(w), err: err, background: background}
 		}
 		root, err := azuredevops.FetchWikiTree(&w, token)
-		return wikiTreeLoadedMsg{wiki: wikiID(w), root: root, err: err}
+		return wikiTreeLoadedMsg{wiki: wikiID(w), root: root, err: err, background: background}
 	}
 }
 
@@ -209,7 +217,7 @@ func (m Model) handleWikiTreeLoaded(msg wikiTreeLoadedMsg) (tea.Model, tea.Cmd) 
 	}
 	m.wiki.trees[msg.wiki] = tree
 	m.wiki.lastSync = time.Now()
-	if !m.anyWikiTreeLoading() {
+	if !msg.background && !m.anyWikiTreeLoading() {
 		m.message = ""
 	}
 	m.clampWikiSelection()
@@ -376,19 +384,36 @@ func (m Model) loadSelectedWikiPage() (tea.Model, tea.Cmd) {
 	if !ok {
 		return m, nil
 	}
-	if _, cached := m.wiki.pages[row.key]; cached || m.wiki.loadingPages[row.key] {
-		return m, nil
+	return m, m.ensureWikiPage(row.wikiIndex, row.key, nil)
+}
+
+// ensureWikiPage fetches a page's content unless it is cached or already
+// on its way.
+func (m Model) ensureWikiPage(wikiIndex int, key wikiPageKey, limit chan struct{}) tea.Cmd {
+	if _, cached := m.wiki.pages[key]; cached || m.wiki.loadingPages[key] {
+		return nil
 	}
-	m.wiki.loadingPages[row.key] = true
-	delete(m.wiki.pageErrors, row.key)
-	w := m.config.Wikis[row.wikiIndex]
-	return m, func() tea.Msg {
+	return m.fetchWikiPage(wikiIndex, key, limit)
+}
+
+// fetchWikiPage fetches a page's content, keeping any cached copy on
+// screen until the new one arrives. A non-nil limit caps how many fetches
+// run at once when many pages are fetched together.
+func (m Model) fetchWikiPage(wikiIndex int, key wikiPageKey, limit chan struct{}) tea.Cmd {
+	m.wiki.loadingPages[key] = true
+	delete(m.wiki.pageErrors, key)
+	w := m.config.Wikis[wikiIndex]
+	return func() tea.Msg {
+		if limit != nil {
+			limit <- struct{}{}
+			defer func() { <-limit }()
+		}
 		token, err := m.lookupPAT(w.PAT)
 		if err != nil {
-			return wikiPageLoadedMsg{key: row.key, err: err}
+			return wikiPageLoadedMsg{key: key, err: err}
 		}
-		content, err := azuredevops.FetchWikiPage(&w, token, row.key.path)
-		return wikiPageLoadedMsg{key: row.key, content: content, err: err}
+		content, err := azuredevops.FetchWikiPage(&w, token, key.path)
+		return wikiPageLoadedMsg{key: key, content: content, err: err}
 	}
 }
 
@@ -397,9 +422,15 @@ func (m Model) handleWikiPageLoaded(msg wikiPageLoadedMsg) (tea.Model, tea.Cmd) 
 	if msg.err != nil {
 		m.wiki.pageErrors[msg.key] = msg.err
 		m.logs.Error(msg.err.Error())
+		if m.mode == ModeWikiPicker {
+			m.refreshWikiPicker()
+		}
 		return m, nil
 	}
 	m.wiki.pages[msg.key] = msg.content
+	if m.mode == ModeWikiPicker {
+		m.refreshWikiPicker()
+	}
 	return m, nil
 }
 
@@ -666,7 +697,13 @@ func writeWikiTempFile(content string) (string, error) {
 // handleWikiPageKeys handles the keys the wiki tree and the page view
 // share, reporting whether msg was one of them.
 func (m Model) handleWikiPageKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
+	if model, cmd, handled := m.handleWikiLeader(msg); handled {
+		return model, cmd, true
+	}
 	switch {
+	case key.Matches(msg, m.keys.LiveReload):
+		model, cmd := m.toggleWikiWatch()
+		return model, cmd, true
 	case key.Matches(msg, m.keys.Help):
 		model, cmd := m.openHelp()
 		return model, cmd, true

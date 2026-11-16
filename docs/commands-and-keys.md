@@ -101,10 +101,15 @@ Most board keys (`a`, `b`, `e`, `t`, `m`, `c`, `M`, `H` / `L`) work here too.
 | `ctrl+g` | Edit the page in `$EDITOR`; on save you're asked before the change is published to Azure DevOps |
 | `M` | Open the page read-only in `$EDITOR` |
 | `ctrl+o` | Open the page in the browser |
+| `space` `space` | Find pages: fuzzy search every page's breadcrumb, like telescope's find files |
+| `space` `s` `g` | Grep pages: search every line of every page (reads all pages the first time; ignores case unless you type an upper case letter) |
 | `r` | Refresh every wiki |
+| `R` | Toggle watch: refresh the wikis and the pages you've opened every 30s (`live_reload_seconds`); the Synced line turns red while on |
 | `a` | Add a wiki: paste a page URL from the browser |
 | `x` | Remove the selected wiki from cmdban (its top line only; nothing changes in Azure DevOps) |
 | `q` / `esc` | Back to the board |
+
+In find and grep, type to filter; `↑`/`↓`, `ctrl+n`/`ctrl+p` or `ctrl+j`/`ctrl+k` pick a result, `ctrl+u`/`ctrl+d` scroll the preview, `enter` opens the page (a grep hit opens at the matching line, with the page revealed in the tree behind it) and `esc` closes. Page titles containing what you typed rank first.
 
 Edits are guarded by the page's version: if someone changed the page after you opened it, publishing is refused and your edit is left in the temp file named in the message.
 

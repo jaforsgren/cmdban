@@ -196,10 +196,14 @@ func (m Model) laneModeDescription(ado *config.AzureDevOpsConfig) string {
 
 // syncedLine turns a dull red while live reload is on.
 func (m Model) syncedLine() string {
-	if m.liveReload {
-		return "🔄 " + topBarLiveReloadStyle.Render("Synced: "+m.syncedDescription()+" · live")
+	return syncedLineFor(m.lastSyncTime, m.liveReload)
+}
+
+func syncedLineFor(lastSync time.Time, live bool) string {
+	if live {
+		return "🔄 " + topBarLiveReloadStyle.Render("Synced: "+describeSync(lastSync)+" · live")
 	}
-	return topBarLine("🔄", "Synced", topBarValueStyle.Render(m.syncedDescription()))
+	return topBarLine("🔄", "Synced", topBarValueStyle.Render(describeSync(lastSync)))
 }
 
 func (m Model) syncedDescription() string {
@@ -472,13 +476,18 @@ func shortcutsForMode(mode Mode) []shortcut {
 		return []shortcut{
 			{taskNavigationKeys, "select page"}, {"l", "expand / step in"}, {"h", "collapse / step out"},
 			{"z", "expand / fold"}, {"Z", "expand / fold all beneath"}, {"enter", "read page"}, {"tab", "preview"},
+			{"space space", "find pages"}, {"space s g", "grep pages"},
 			{"ctrl+u/ctrl+f", "scroll preview"}, {"ctrl+g", "edit in nvim"}, {"M", "page as markdown"}, {"ctrl+o", "open page in browser"},
-			{"r", "refresh"}, {"a", "add wiki"}, {"x", "remove wiki"}, {closeKey, "back to board"},
+			{"r", "refresh"}, {"R", "watch (auto refresh)"}, {"a", "add wiki"}, {"x", "remove wiki"}, {closeKey, "back to board"},
 		}
 	case ModeWikiView:
 		return []shortcut{
 			{closeKey, "back to wikis"}, {taskNavigationKeys, "scroll"}, {topBottomKeys, "top"}, {"ctrl+g", "edit in nvim"}, {"M", "page as markdown"},
-			{"ctrl+o", "open page in browser"}, {"r", "refresh"},
+			{"ctrl+o", "open page in browser"}, {"r", "refresh"}, {"R", "watch (auto refresh)"},
+		}
+	case ModeWikiPicker:
+		return []shortcut{
+			{"enter", "open page"}, {"↑/↓", "select"}, {"ctrl+n/ctrl+p", "select"}, {"ctrl+u/ctrl+d", "scroll preview"}, {"esc", "close"},
 		}
 	default:
 		return nil
@@ -521,6 +530,8 @@ func (m Model) modeName() string {
 		return "WIKI"
 	case ModeWikiView:
 		return "WIKI PAGE"
+	case ModeWikiPicker:
+		return "WIKI SEARCH"
 	default:
 		return "NORMAL"
 	}

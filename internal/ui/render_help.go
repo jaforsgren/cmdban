@@ -83,6 +83,7 @@ func helpSections() []helpSection {
 		{"Link PR", ModePRPicker},
 		{"Wiki", ModeWiki},
 		{"Wiki page", ModeWikiView},
+		{"Wiki search", ModeWikiPicker},
 		{"PAT manager", ModePATManager},
 		{"Logs", ModeLogs},
 		{"Input / command / ADO setup", ModeInput},

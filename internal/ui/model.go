@@ -91,6 +91,7 @@ const (
 	ModePRPicker
 	ModeWiki
 	ModeWikiView
+	ModeWikiPicker
 )
 
 type Model struct {
@@ -404,6 +405,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case wikiPagePublishedMsg:
 		return m.handleWikiPagePublished(msg)
+
+	case wikiWatchTickMsg:
+		return m.handleWikiWatchTick(msg)
 	}
 
 	return m, nil
@@ -479,13 +483,17 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleWikiViewMode(msg)
 	}
 
+	if m.mode == ModeWikiPicker {
+		return m.handleWikiPickerMode(msg)
+	}
+
 	return m.handleNormalMode(msg)
 }
 
 // isTextEntryMode reports modes where keys are typed into an input rather
 // than treated as shortcuts.
 func (m Model) isTextEntryMode() bool {
-	return m.mode == ModeInput || m.mode == ModeCommand || m.mode == ModeTag || m.mode == ModeSearch
+	return m.mode == ModeInput || m.mode == ModeCommand || m.mode == ModeTag || m.mode == ModeSearch || m.mode == ModeWikiPicker
 }
 
 func (m Model) handleNormalMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -2269,6 +2277,10 @@ func (m Model) renderBoard() string {
 
 	if mode == ModeWikiView {
 		return m.renderWikiView()
+	}
+
+	if mode == ModeWikiPicker {
+		return m.renderWikiPicker()
 	}
 
 	laneWidths := m.computeLaneWidths()
