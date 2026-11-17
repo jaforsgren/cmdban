@@ -174,7 +174,8 @@ func (c *Client) CurrentIterationPath() (string, error) {
 		return latest.Path, nil
 	}
 
-	return "", fmt.Errorf("no current or past iterations found for team %q", c.team)
+	// Teams without sprints (e.g. continuous-flow teams) only have a default iteration.
+	return c.TeamDefaultIterationPath()
 }
 
 // latestPastIteration compares start dates as strings, which is safe because

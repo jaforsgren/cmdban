@@ -376,3 +376,26 @@ func TestLatestPastIterationIgnoresFutureIterations(t *testing.T) {
 		t.Fatal("latestPastIteration() ok = true, want false when no iteration is past")
 	}
 }
+
+func TestCurrentIterationPathFallsBackToTeamDefaultWhenTeamHasNoSprints(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/teamsettings"):
+			w.Write([]byte(`{"defaultIteration":{"name":"Continuous","path":"\\Continuous"}}`))
+		case r.URL.Query().Get("$timeframe") == "current":
+			w.WriteHeader(http.StatusNotFound)
+			w.Write([]byte(noCurrentIterationBody))
+		default:
+			w.Write([]byte(`{"count":0,"value":[]}`))
+		}
+	}))
+	defer srv.Close()
+
+	got, err := testClient(srv.URL).CurrentIterationPath()
+	if err != nil {
+		t.Fatalf("CurrentIterationPath() error = %v", err)
+	}
+	if got != `proj\Continuous` {
+		t.Fatalf("CurrentIterationPath() = %q, want the team default iteration", got)
+	}
+}
