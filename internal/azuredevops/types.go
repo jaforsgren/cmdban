@@ -104,6 +104,12 @@ type WorkItemListResponse struct {
 	Value []WorkItem `json:"value"`
 }
 
+// Values of IterationAttrs.TimeFrame.
+const (
+	TimeFramePast    = "past"
+	TimeFrameCurrent = "current"
+)
+
 type IterationAttrs struct {
 	StartDate  string `json:"startDate"`
 	FinishDate string `json:"finishDate"`

@@ -550,7 +550,7 @@ func (m Model) renderADOSetup() string {
 			rows = append(rows, renderADOSetupItem("Current sprint (auto)", setup.selectorIndex == 0))
 			for i, it := range setup.iterations {
 				label := it.Name
-				if it.Attributes.TimeFrame == "current" {
+				if it.Attributes.TimeFrame == azuredevops.TimeFrameCurrent {
 					label += "  (current)"
 				}
 				rows = append(rows, renderADOSetupItem(label, setup.selectorIndex == i+1))

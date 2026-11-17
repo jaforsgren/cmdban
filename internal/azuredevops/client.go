@@ -165,19 +165,32 @@ func (c *Client) CurrentIterationPath() (string, error) {
 	}
 
 	// Between sprints: fall back to the most recently started past iteration.
-	pastURL := fmt.Sprintf(
-		"%s/_apis/work/teamsettings/iterations?$timeframe=past&api-version=%s",
-		c.teamURL(), apiVersion,
-	)
-	var past IterationListResponse
-	if err := c.get(pastURL, &past); err != nil {
+	// ADO's $timeframe filter only accepts "current", so filter the full list.
+	iterations, err := c.ListIterations()
+	if err != nil {
 		return "", err
 	}
-	if len(past.Value) > 0 {
-		return past.Value[len(past.Value)-1].Path, nil
+	if latest, ok := latestPastIteration(iterations); ok {
+		return latest.Path, nil
 	}
 
-	return "", fmt.Errorf("no iterations found for team %q", c.team)
+	return "", fmt.Errorf("no current or past iterations found for team %q", c.team)
+}
+
+// latestPastIteration compares start dates as strings, which is safe because
+// ADO returns them as ISO 8601 UTC timestamps.
+func latestPastIteration(iterations []Iteration) (Iteration, bool) {
+	var latest Iteration
+	found := false
+	for _, it := range iterations {
+		if it.Attributes.TimeFrame != TimeFramePast {
+			continue
+		}
+		if !found || it.Attributes.StartDate > latest.Attributes.StartDate {
+			latest, found = it, true
+		}
+	}
+	return latest, found
 }
 
 // noCurrentIterationType is the exception ADO reports, as a 404 rather than

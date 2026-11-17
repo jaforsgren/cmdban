@@ -334,10 +334,14 @@ func TestCurrentIterationPathFallsBackToPastWhenNoCurrentIteration(t *testing.T)
 		case "current":
 			w.WriteHeader(http.StatusNotFound)
 			w.Write([]byte(noCurrentIterationBody))
-		case "past":
-			w.Write([]byte(`{"count":2,"value":[{"name":"S1","path":"proj\\S1"},{"name":"S2","path":"proj\\S2"}]}`))
+		case "":
+			w.Write([]byte(`{"count":3,"value":[
+				{"name":"S2","path":"proj\\S2","attributes":{"startDate":"2026-11-01T00:00:00Z","timeFrame":"past"}},
+				{"name":"S3","path":"proj\\S3","attributes":{"startDate":"2026-12-01T00:00:00Z","timeFrame":"future"}},
+				{"name":"S1","path":"proj\\S1","attributes":{"startDate":"2026-10-01T00:00:00Z","timeFrame":"past"}}]}`))
 		default:
-			t.Errorf("unexpected timeframe %q", r.URL.Query().Get("$timeframe"))
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte(`{"message":"timeframe","typeKey":"InvalidTeamSettingsIterationException"}`))
 		}
 	}))
 	defer srv.Close()
@@ -360,5 +364,15 @@ func TestCurrentIterationPathReturnsOtherNotFoundErrors(t *testing.T) {
 
 	if _, err := testClient(srv.URL).CurrentIterationPath(); err == nil {
 		t.Fatal("CurrentIterationPath() error = nil, want the 404 to propagate")
+	}
+}
+
+func TestLatestPastIterationIgnoresFutureIterations(t *testing.T) {
+	iterations := []Iteration{
+		{Path: "future", Attributes: IterationAttrs{StartDate: "2026-12-01T00:00:00Z", TimeFrame: "future"}},
+	}
+
+	if _, ok := latestPastIteration(iterations); ok {
+		t.Fatal("latestPastIteration() ok = true, want false when no iteration is past")
 	}
 }
