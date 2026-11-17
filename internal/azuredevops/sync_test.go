@@ -353,18 +353,20 @@ func TestBoardWebURL(t *testing.T) {
 	}
 }
 
-func TestWithoutRemovedItemsDropsRemovedState(t *testing.T) {
+func TestWithoutHiddenItemsDropsRemovedAndCompletedStates(t *testing.T) {
 	items := []WorkItem{
 		{ID: 1, Fields: WorkItemFields{State: "New"}},
 		{ID: 2, Fields: WorkItemFields{State: workItemStateRemoved}},
 		{ID: 3, Fields: WorkItemFields{State: "removed"}},
 		{ID: 4, Fields: WorkItemFields{State: "Active"}},
+		{ID: 5, Fields: WorkItemFields{State: workItemStateCompleted}},
+		{ID: 6, Fields: WorkItemFields{State: "completed"}},
 	}
 
-	got := withoutRemovedItems(items)
+	got := withoutHiddenItems(items)
 
 	if len(got) != 2 || got[0].ID != 1 || got[1].ID != 4 {
-		t.Fatalf("withoutRemovedItems() = %+v, want items 1 and 4", got)
+		t.Fatalf("withoutHiddenItems() = %+v, want items 1 and 4", got)
 	}
 }
 
