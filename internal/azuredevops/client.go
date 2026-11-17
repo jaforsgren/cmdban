@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -156,7 +157,7 @@ func (c *Client) CurrentIterationPath() (string, error) {
 		c.teamURL(), apiVersion,
 	)
 	var current IterationListResponse
-	if err := c.get(currentURL, &current); err != nil {
+	if err := c.get(currentURL, &current); err != nil && !isNoCurrentIteration(err) {
 		return "", err
 	}
 	if len(current.Value) > 0 {
@@ -177,6 +178,19 @@ func (c *Client) CurrentIterationPath() (string, error) {
 	}
 
 	return "", fmt.Errorf("no iterations found for team %q", c.team)
+}
+
+// noCurrentIterationType is the exception ADO reports, as a 404 rather than
+// an empty list, when no team iteration contains today's date. The
+// "Exception" suffix is omitted because HTTPError truncates the body right
+// before it.
+const noCurrentIterationType = "CurrentIterationDoesNotExist"
+
+func isNoCurrentIteration(err error) bool {
+	var httpErr *HTTPError
+	return errors.As(err, &httpErr) &&
+		httpErr.StatusCode == http.StatusNotFound &&
+		strings.Contains(httpErr.Body, noCurrentIterationType)
 }
 
 func (c *Client) ListBacklogs() ([]Backlog, error) {

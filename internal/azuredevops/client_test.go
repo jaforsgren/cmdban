@@ -325,3 +325,40 @@ func TestHasTagIgnoresCase(t *testing.T) {
 		t.Fatal("HasTag() = true, want false for a different tag")
 	}
 }
+
+const noCurrentIterationBody = `{"$id":"1","innerException":null,"message":"No current iteration was found. No iteration contains today's date.","typeName":"Microsoft.Azure.Boards.Agile.Common.Exceptions.CurrentIterationDoesNotExistException, Microsoft.Azure.Boards.Agile.Common","typeKey":"CurrentIterationDoesNotExistException","errorCode":0,"eventId":3000}`
+
+func TestCurrentIterationPathFallsBackToPastWhenNoCurrentIteration(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Query().Get("$timeframe") {
+		case "current":
+			w.WriteHeader(http.StatusNotFound)
+			w.Write([]byte(noCurrentIterationBody))
+		case "past":
+			w.Write([]byte(`{"count":2,"value":[{"name":"S1","path":"proj\\S1"},{"name":"S2","path":"proj\\S2"}]}`))
+		default:
+			t.Errorf("unexpected timeframe %q", r.URL.Query().Get("$timeframe"))
+		}
+	}))
+	defer srv.Close()
+
+	got, err := testClient(srv.URL).CurrentIterationPath()
+	if err != nil {
+		t.Fatalf("CurrentIterationPath() error = %v", err)
+	}
+	if got != `proj\S2` {
+		t.Fatalf("CurrentIterationPath() = %q, want the latest past iteration", got)
+	}
+}
+
+func TestCurrentIterationPathReturnsOtherNotFoundErrors(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte(`{"message":"The team does not exist."}`))
+	}))
+	defer srv.Close()
+
+	if _, err := testClient(srv.URL).CurrentIterationPath(); err == nil {
+		t.Fatal("CurrentIterationPath() error = nil, want the 404 to propagate")
+	}
+}
