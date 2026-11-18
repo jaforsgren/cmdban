@@ -190,6 +190,21 @@ func TestLaneForWorkItemPrefersConfiguredBoardColumnOverAreaTeamBoard(t *testing
 	}
 }
 
+func TestLaneForWorkItemIgnoresStaleBoardColumnContradictingState(t *testing.T) {
+	cfg := boardColumnsConfig()
+	fields := WorkItemFields{
+		WorkItemType:  "Bug",
+		State:         "Closed",
+		KanbanColumns: map[string]string{testColumnField: "ToDo"},
+	}
+
+	got := laneForWorkItem(cfg, fields)
+
+	if got != "closed" {
+		t.Fatalf("laneForWorkItem() = %q, want %q", got, "closed")
+	}
+}
+
 func TestBoardFetchFieldsIncludesColumnFieldForBoardColumnLanes(t *testing.T) {
 	got := boardFetchFields(boardColumnsConfig())
 

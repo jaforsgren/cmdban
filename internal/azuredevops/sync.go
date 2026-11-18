@@ -30,9 +30,13 @@ func laneForState(cfg *config.AzureDevOpsConfig, state string) task.Status {
 // configured board, which is where moves write it. Items not on the configured board (other teams' boards, or types the board
 // doesn't carry) fall back to the first column whose state mapping matches,
 // then to the board's first column so they never vanish from the view.
+//
+// The column is trusted only while it agrees with the item's state: ADO stops
+// updating a board's column field once the item leaves that team's area, so
+// e.g. a since-closed bug can still report "ToDo".
 func laneForBoardColumn(cfg *config.AzureDevOpsConfig, f WorkItemFields) task.Status {
 	for _, bc := range cfg.BoardColumns {
-		if strings.EqualFold(bc.Column, f.boardColumn(cfg.BoardColumnField)) {
+		if strings.EqualFold(bc.Column, f.boardColumn(cfg.BoardColumnField)) && columnAllowsState(bc, f) {
 			return task.Status(bc.Lane)
 		}
 	}
@@ -42,6 +46,14 @@ func laneForBoardColumn(cfg *config.AzureDevOpsConfig, f WorkItemFields) task.St
 		}
 	}
 	return task.Status(cfg.BoardColumns[0].Lane)
+}
+
+// columnAllowsState reports whether f's state is the one the column maps
+// f's type to. Types the column has no mapping for can't be checked, so
+// their column is accepted as-is.
+func columnAllowsState(bc config.BoardColumnMapping, f WorkItemFields) bool {
+	state, mapped := bc.States[f.WorkItemType]
+	return !mapped || strings.EqualFold(state, f.State)
 }
 
 // laneForStateLane resolves a work item's lane on a board toggled to state
