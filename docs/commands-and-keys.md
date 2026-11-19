@@ -47,6 +47,8 @@ Press `?` inside cmdban for the same list, grouped by view.
 | `c` | Comments view; `a` there writes a comment in `$EDITOR` |
 | `M` | Open the work item in `$EDITOR` as read-only markdown, comments included |
 | `ctrl+o` | Open the work item in the browser |
+| `yp` | Copy the work item link to the clipboard |
+| `yr` | Copy the linked PRs to the clipboard: the card title, then one `repository: link` line per PR |
 | `O` | Open the board in the browser |
 
 Cards show a type glyph: ◆ story, ● bug, ▪ task, ★ feature, ♛ epic.
@@ -62,7 +64,7 @@ Cards with comments added since you last opened them show 💬 before the title.
 | `J` / `K` | Scroll the comments pane |
 | `l` | Link one of your own PRs (any project in the org) |
 | `c` | Comments view |
-| `H` / `L`, `e`, `d`, `x` | Move, edit, toggle done, delete — as on the board |
+| `H` / `L`, `e`, `d`, `x`, `yp`, `yr` | Move, edit, toggle done, delete, copy link, copy PRs — as on the board |
 | `q` | Back |
 
 ## Focus mode
@@ -73,7 +75,7 @@ Cards with comments added since you last opened them show 💬 before the title.
 | `enter` | Open card |
 | `tab` / `q` | Exit focus |
 
-Most board keys (`a`, `b`, `e`, `t`, `m`, `c`, `M`, `H` / `L`) work here too.
+Most board keys (`a`, `b`, `e`, `t`, `m`, `c`, `M`, `yp`, `yr`, `H` / `L`) work here too.
 
 ## Board switcher
 

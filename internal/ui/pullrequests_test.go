@@ -152,3 +152,65 @@ func TestPRLinkedReloadsOpenSidePane(t *testing.T) {
 		t.Fatalf("cmd = %v, loading = %v, message = %q; want PRs reloading", cmd, m.linkedPRsLoading, m.message)
 	}
 }
+
+func TestFormatPRLinksListsRepositoryLinksUnderCardTitle(t *testing.T) {
+	got := formatPRLinks("Fix login", []azuredevops.PullRequestLink{
+		{Repository: "api", URL: "https://example/api/pullrequest/1"},
+		{Repository: "web", URL: "https://example/web/pullrequest/2"},
+	})
+
+	want := "Fix login\napi: https://example/api/pullrequest/1\nweb: https://example/web/pullrequest/2"
+	if got != want {
+		t.Fatalf("formatPRLinks() = %q, want %q", got, want)
+	}
+}
+
+func TestYRFetchesLinkedPRLinksForADOCard(t *testing.T) {
+	for _, mode := range []Mode{ModeNormal, ModeFocus, ModeView} {
+		m := adoTestModel(adoTestConfig())
+		m.mode = mode
+
+		got, _ := m.Update(keyMsgFor("y"))
+		got, cmd := got.(Model).Update(keyMsgFor("r"))
+
+		if cmd == nil || got.(Model).message != "Fetching linked PRs..." {
+			t.Fatalf("mode %v: cmd = %v, message = %q; want a fetch", mode, cmd, got.(Model).message)
+		}
+	}
+}
+
+func TestYROnLocalTaskShowsMessage(t *testing.T) {
+	m := NewModel(&config.Config{CurrentBoard: "local", Boards: []config.Board{{Name: "local"}}})
+	m.board.AddTask(&task.Task{ID: "1", Title: "local", Status: task.StatusToday})
+
+	m = pressKey(t, m, "y")
+	got, cmd := m.Update(keyMsgFor("r"))
+
+	if cmd != nil || got.(Model).message != "Only Azure DevOps work items have linked PRs" {
+		t.Fatalf("cmd = %v, message = %q; want no fetch and an explanation", cmd, got.(Model).message)
+	}
+}
+
+func TestPRLinksLoadedCopiesFormattedLinks(t *testing.T) {
+	copied := stubClipboard(t)
+	links := []azuredevops.PullRequestLink{{Repository: "api", URL: "https://example/api/pullrequest/1"}}
+
+	got, _ := adoTestModel(adoTestConfig()).Update(prLinksLoadedMsg{cardTitle: "Fix login", links: links})
+
+	if len(*copied) != 1 || (*copied)[0] != formatPRLinks("Fix login", links) {
+		t.Fatalf("copied %v, want the formatted links", *copied)
+	}
+	if got.(Model).message != "Copied 1 linked PRs" {
+		t.Fatalf("message = %q", got.(Model).message)
+	}
+}
+
+func TestPRLinksLoadedWithoutPRsCopiesNothing(t *testing.T) {
+	copied := stubClipboard(t)
+
+	got, _ := adoTestModel(adoTestConfig()).Update(prLinksLoadedMsg{cardTitle: "Fix login"})
+
+	if len(*copied) != 0 || got.(Model).message != "No PRs linked to this work item" {
+		t.Fatalf("copied %v, message = %q; want nothing copied and an explanation", *copied, got.(Model).message)
+	}
+}

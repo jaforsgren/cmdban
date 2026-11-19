@@ -2,6 +2,15 @@ package ui
 
 import "github.com/charmbracelet/bubbles/key"
 
+// Yank starts a two key chord: y, then the second key picks what to copy.
+const (
+	yankPrefixKey    = "y"
+	yankURLKey       = "p"
+	yankPRLinksKey   = "r"
+	copyURLChord     = yankPrefixKey + yankURLKey
+	copyPRLinksChord = yankPrefixKey + yankPRLinksKey
+)
+
 type KeyMap struct {
 	Up              key.Binding
 	Down            key.Binding
@@ -30,6 +39,7 @@ type KeyMap struct {
 	Refresh         key.Binding
 	OpenEditor      key.Binding
 	OpenURL         key.Binding
+	Yank            key.Binding
 	OpenBoardURL    key.Binding
 	MarkdownView    key.Binding
 	Comments        key.Binding
@@ -161,6 +171,10 @@ var DefaultKeyMap = KeyMap{
 	OpenURL: key.NewBinding(
 		key.WithKeys("ctrl+o"),
 		key.WithHelp("ctrl+o", "open url in browser"),
+	),
+	Yank: key.NewBinding(
+		key.WithKeys(yankPrefixKey),
+		key.WithHelp(copyURLChord+"/"+copyPRLinksChord, "copy url / linked PRs to clipboard"),
 	),
 	MarkdownView: key.NewBinding(
 		key.WithKeys("M"),

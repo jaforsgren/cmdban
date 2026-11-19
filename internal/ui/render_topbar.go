@@ -430,7 +430,7 @@ var (
 		{"ctrl+m", "move board"}, {":", "command"}, {"?", "help"},
 	}
 	adoBoardShortcuts = []shortcut{
-		{"b", "new bug"}, {filterKeys, "filters (listed in the topbar)"}, {"U", "unassigned"}, {"v", "column/state lanes"}, {"c", "comments"}, {"ctrl+o", "open card in browser"}, {"O", "open board in browser"}, {"M", "card as markdown"},
+		{"b", "new bug"}, {filterKeys, "filters (listed in the topbar)"}, {"U", "unassigned"}, {"v", "column/state lanes"}, {"c", "comments"}, {"ctrl+o", "open card in browser"}, {copyURLChord, "copy card link"}, {copyPRLinksChord, "copy linked PRs"}, {"O", "open board in browser"}, {"M", "card as markdown"},
 	}
 )
 
@@ -453,12 +453,12 @@ func shortcutsForMode(mode Mode) []shortcut {
 		return []shortcut{
 			{closeKey, "back"}, {taskNavigationKeys, "scroll"}, {"tab", "PRs & comments pane"}, {"J/K", "scroll comments"}, {"c", "comments view"}, {"l", "link my PR"},
 			{"H/L", "move lane"}, {"e", "edit"}, {"d", "toggle done"}, {"x", "delete"},
-			{"ctrl+g", "editor"}, {"M", "card as markdown"}, {"ctrl+o", "open card in browser"}, {"ctrl+m", "move board"}, {"r", "refresh"},
+			{"ctrl+g", "editor"}, {"M", "card as markdown"}, {"ctrl+o", "open card in browser"}, {copyURLChord, "copy card link"}, {copyPRLinksChord, "copy linked PRs"}, {"ctrl+m", "move board"}, {"r", "refresh"},
 		}
 	case ModeFocus:
 		return []shortcut{
 			{"tab/q", "exit focus"}, {"enter", "open card"}, {taskNavigationKeys, "select"}, {laneNavigationKeys, "lane"}, {"H/L", "move lane"}, {"a", "new"}, {"b", "new bug"}, {"e", "edit"},
-			{"t", "tag"}, {"m", "mark"}, {"c", "comments"}, {"M", "card as markdown"}, {"ctrl+o", "open card in browser"}, {"r", "refresh"},
+			{"t", "tag"}, {"m", "mark"}, {"c", "comments"}, {"M", "card as markdown"}, {"ctrl+o", "open card in browser"}, {copyURLChord, "copy card link"}, {copyPRLinksChord, "copy linked PRs"}, {"r", "refresh"},
 		}
 	case ModeBoardSelector:
 		return []shortcut{{taskNavigationKeys, "navigate"}, {"enter", "switch"}, {"a", "new local board"}, {"A", "new ADO board"}, {closeKey, "close"}}

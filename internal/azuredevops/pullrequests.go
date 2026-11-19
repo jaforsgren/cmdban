@@ -68,6 +68,12 @@ type PullRequestSummary struct {
 	Pipelines    []PipelineRun
 }
 
+// PullRequestLink is a linked PR's repository and web page.
+type PullRequestLink struct {
+	Repository string
+	URL        string
+}
+
 // PipelineRun is a build of a PR's merge commit.
 type PipelineRun struct {
 	Name   string
@@ -351,11 +357,10 @@ func LinkPullRequest(adoCfg *config.AzureDevOpsConfig, pat string, workItemID in
 // item, including pipeline runs of the merge commit for completed PRs.
 func FetchLinkedPullRequests(adoCfg *config.AzureDevOpsConfig, pat string, workItemID int) ([]PullRequestSummary, error) {
 	client := NewClient(adoCfg.Org, adoCfg.Project, adoCfg.Team, pat)
-	relations, err := client.FetchWorkItemRelations(workItemID)
+	refs, err := client.linkedPullRequestRefs(workItemID)
 	if err != nil {
-		return nil, fmt.Errorf("fetching work item %d links: %w", workItemID, err)
+		return nil, err
 	}
-	refs := parsePullRequestRefs(relations)
 	summaries := make([]PullRequestSummary, 0, len(refs))
 	for _, ref := range refs {
 		summary, err := client.pullRequestSummary(ref)
@@ -365,4 +370,31 @@ func FetchLinkedPullRequests(adoCfg *config.AzureDevOpsConfig, pat string, workI
 		summaries = append(summaries, summary)
 	}
 	return summaries, nil
+}
+
+// FetchLinkedPullRequestLinks returns the repository and web page of every
+// PR linked to the work item, without the side pane's reviews and pipelines.
+func FetchLinkedPullRequestLinks(adoCfg *config.AzureDevOpsConfig, pat string, workItemID int) ([]PullRequestLink, error) {
+	client := NewClient(adoCfg.Org, adoCfg.Project, adoCfg.Team, pat)
+	refs, err := client.linkedPullRequestRefs(workItemID)
+	if err != nil {
+		return nil, err
+	}
+	links := make([]PullRequestLink, 0, len(refs))
+	for _, ref := range refs {
+		pr, err := client.FetchPullRequest(ref)
+		if err != nil {
+			return nil, fmt.Errorf("fetching PR %d: %w", ref.ID, err)
+		}
+		links = append(links, PullRequestLink{Repository: pr.Repository.Name, URL: pullRequestWebURL(pr)})
+	}
+	return links, nil
+}
+
+func (c *Client) linkedPullRequestRefs(workItemID int) ([]PullRequestRef, error) {
+	relations, err := c.FetchWorkItemRelations(workItemID)
+	if err != nil {
+		return nil, fmt.Errorf("fetching work item %d links: %w", workItemID, err)
+	}
+	return parsePullRequestRefs(relations), nil
 }

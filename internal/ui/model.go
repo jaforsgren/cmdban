@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/atotto/clipboard"
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -111,6 +112,7 @@ type Model struct {
 	inputAction        string
 	message            string
 	gPressed           bool
+	yPressed           bool
 	err                error
 	tagAutocomplete    tagAutocomplete
 	searchFilter       string
@@ -348,6 +350,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case prLinkedMsg:
 		return m.handlePRLinked(msg)
 
+	case prLinksLoadedMsg:
+		return m.handlePRLinksLoaded(msg)
+
 	case errMsg:
 		m.err = msg.err
 		m.message = "Error: " + msg.err.Error()
@@ -420,6 +425,16 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	if m.mode == ModeConfirm {
 		return m.handleConfirmMode(msg)
+	}
+
+	if m.yPressed {
+		m.yPressed = false
+		switch msg.String() {
+		case yankURLKey:
+			return m.copyTaskURL()
+		case yankPRLinksKey:
+			return m.copyLinkedPRLinks()
+		}
 	}
 
 	if !m.isTextEntryMode() && key.Matches(msg, m.keys.ToggleTopBar) {
@@ -691,6 +706,10 @@ func (m Model) handleNormalMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.OpenURL):
 		m.gPressed = false
 		return m.openTaskURL()
+
+	case key.Matches(msg, m.keys.Yank):
+		m.gPressed = false
+		m.yPressed = true
 
 	case key.Matches(msg, m.keys.OpenBoardURL):
 		m.gPressed = false
@@ -995,6 +1014,11 @@ func (m Model) handleViewMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.OpenURL):
 		return m.openTaskURL()
 
+	case key.Matches(msg, m.keys.Yank):
+		m.gPressed = false
+		m.yPressed = true
+		return m, nil
+
 	case key.Matches(msg, m.keys.Comments):
 		return m.openComments()
 
@@ -1180,6 +1204,11 @@ func (m Model) handleFocusMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.OpenURL):
 		m.gPressed = false
 		return m.openTaskURL()
+
+	case key.Matches(msg, m.keys.Yank):
+		m.gPressed = false
+		m.yPressed = true
+		return m, nil
 
 	case key.Matches(msg, m.keys.Comments):
 		m.gPressed = false
@@ -1768,6 +1797,14 @@ func (m Model) pushADOWorkItemEdit(t *task.Task, title, description string) tea.
 }
 
 func (m Model) openTaskURL() (tea.Model, tea.Cmd) {
+	return m.withSelectedTaskURL(Model.openURL)
+}
+
+func (m Model) copyTaskURL() (tea.Model, tea.Cmd) {
+	return m.withSelectedTaskURL(Model.copyURL)
+}
+
+func (m Model) withSelectedTaskURL(action func(Model, string) (tea.Model, tea.Cmd)) (tea.Model, tea.Cmd) {
 	t := m.selectedTask()
 	if t == nil {
 		return m, nil
@@ -1778,7 +1815,21 @@ func (m Model) openTaskURL() (tea.Model, tea.Cmd) {
 		m.message = "No URL found for this task"
 		return m, nil
 	}
-	return m.openURL(url)
+	return action(m, url)
+}
+
+func (m Model) copyURL(url string) (tea.Model, tea.Cmd) {
+	return m.copyToClipboard(url, "Copied "+url)
+}
+
+func (m Model) copyToClipboard(text, successMessage string) (tea.Model, tea.Cmd) {
+	if err := writeClipboard(text); err != nil {
+		m.message = "Failed to copy to clipboard: " + err.Error()
+		m.logs.Error(m.message)
+		return m, nil
+	}
+	m.message = successMessage
+	return m, nil
 }
 
 // openBoardURL opens the ADO board's web page; local boards have none.
@@ -1822,6 +1873,9 @@ func (m Model) taskURL(t *task.Task) (string, bool) {
 
 // openInBrowser is swapped out in tests so they don't launch a browser.
 var openInBrowser = openURLInBrowser
+
+// writeClipboard is swapped out in tests so they don't touch the clipboard.
+var writeClipboard = clipboard.WriteAll
 
 func openURLInBrowser(url string) error {
 	var c *exec.Cmd

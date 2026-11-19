@@ -38,6 +38,11 @@ type myPRsLoadedMsg struct {
 	prs        []azuredevops.LinkablePullRequest
 }
 
+type prLinksLoadedMsg struct {
+	cardTitle string
+	links     []azuredevops.PullRequestLink
+}
+
 type prLinkedMsg struct {
 	workItemID int
 	prID       int
@@ -76,6 +81,46 @@ func (m Model) handleLinkedPRsLoaded(msg linkedPRsLoadedMsg) (tea.Model, tea.Cmd
 	m.linkedPRsLoading = false
 	m.linkedPRs = msg.prs
 	return m, nil
+}
+
+// copyLinkedPRLinks fetches the PRs linked to the selected work item and
+// copies them under the card's title, one "repository: link" per line.
+func (m Model) copyLinkedPRLinks() (tea.Model, tea.Cmd) {
+	t := m.selectedTask()
+	if t == nil || t.ADOItemID == 0 {
+		m.message = "Only Azure DevOps work items have linked PRs"
+		return m, nil
+	}
+	workItemID, cardTitle := t.ADOItemID, t.Title
+	adoCfg := m.config.ActiveBoard().AzureDevOps
+	m.message = "Fetching linked PRs..."
+	return m, func() tea.Msg {
+		token, ok := m.patStore.Get(adoCfg.PAT)
+		if !ok {
+			return errMsg{fmt.Errorf("PAT %q not found — run :pats to add it", adoCfg.PAT)}
+		}
+		links, err := azuredevops.FetchLinkedPullRequestLinks(adoCfg, token, workItemID)
+		if err != nil {
+			return errMsg{err}
+		}
+		return prLinksLoadedMsg{cardTitle: cardTitle, links: links}
+	}
+}
+
+func (m Model) handlePRLinksLoaded(msg prLinksLoadedMsg) (tea.Model, tea.Cmd) {
+	if len(msg.links) == 0 {
+		m.message = "No PRs linked to this work item"
+		return m, nil
+	}
+	return m.copyToClipboard(formatPRLinks(msg.cardTitle, msg.links), fmt.Sprintf("Copied %d linked PRs", len(msg.links)))
+}
+
+func formatPRLinks(cardTitle string, links []azuredevops.PullRequestLink) string {
+	lines := []string{cardTitle}
+	for _, link := range links {
+		lines = append(lines, link.Repository+": "+link.URL)
+	}
+	return strings.Join(lines, "\n")
 }
 
 // openPRPicker lists the user's own PRs so one can be linked to the

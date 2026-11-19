@@ -75,3 +75,47 @@ func TestCtrlOOpensSelectedADOCard(t *testing.T) {
 		}
 	}
 }
+
+func stubClipboard(t *testing.T) *[]string {
+	t.Helper()
+	var copied []string
+	original := writeClipboard
+	writeClipboard = func(text string) error {
+		copied = append(copied, text)
+		return nil
+	}
+	t.Cleanup(func() { writeClipboard = original })
+	return &copied
+}
+
+func TestYPCopiesSelectedADOCardURL(t *testing.T) {
+	for _, mode := range []Mode{ModeNormal, ModeFocus, ModeView} {
+		copied := stubClipboard(t)
+		m := adoTestModel(adoTestConfig())
+		m.mode = mode
+
+		got, _ := m.Update(keyMsgFor("y"))
+		got, _ = got.(Model).Update(keyMsgFor("p"))
+
+		want := "https://dev.azure.com/org/proj/_workitems/edit/1"
+		if len(*copied) != 1 || (*copied)[0] != want {
+			t.Fatalf("mode %v: copied %v, want [%s]", mode, *copied, want)
+		}
+		if got.(Model).message != "Copied "+want {
+			t.Fatalf("mode %v: message = %q", mode, got.(Model).message)
+		}
+	}
+}
+
+func TestYFollowedByOtherKeyDoesNotCopy(t *testing.T) {
+	copied := stubClipboard(t)
+	m := adoTestModel(adoTestConfig())
+
+	got, _ := m.Update(keyMsgFor("y"))
+	got, _ = got.(Model).Update(keyMsgFor("j"))
+	got.(Model).Update(keyMsgFor("p"))
+
+	if len(*copied) != 0 {
+		t.Fatalf("copied %v, want nothing", *copied)
+	}
+}
