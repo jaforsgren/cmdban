@@ -6,7 +6,6 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"cmdban/internal/azuredevops"
 	"cmdban/internal/checkboxdraft"
 	"cmdban/internal/task"
 )
@@ -131,15 +130,11 @@ func (m Model) saveCheckboxDraft() (tea.Model, tea.Cmd) {
 		m.message = "No unsaved checkbox changes on this card"
 		return m, nil
 	}
-	adoCfg := m.config.ActiveBoard().AzureDevOps
+	provider := m.adoProvider()
 	workItemID := t.ADOItemID
 	m.message = fmt.Sprintf("Saving checkboxes on #%d...", workItemID)
 	return m, func() tea.Msg {
-		token, ok := m.patStore.Get(adoCfg.PAT)
-		if !ok {
-			return errMsg{fmt.Errorf("PAT %q not found — run :pats to add it", adoCfg.PAT)}
-		}
-		if err := azuredevops.SaveCheckboxChanges(adoCfg, token, workItemID, changes); err != nil {
+		if err := provider.SaveCheckboxChanges(workItemID, changes); err != nil {
 			return errMsg{err}
 		}
 		return checkboxesSavedMsg{org: org, workItemID: workItemID, changes: changes}

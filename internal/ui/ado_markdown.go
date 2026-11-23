@@ -32,15 +32,11 @@ func (m Model) openADOMarkdown() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	url, _ := m.taskURL(t)
-	adoCfg := m.config.ActiveBoard().AzureDevOps
+	provider := m.adoProvider()
 	snapshot := *t
 	m.message = fmt.Sprintf("Preparing #%d as markdown...", t.ADOItemID)
 	return m, func() tea.Msg {
-		token, ok := m.patStore.Get(adoCfg.PAT)
-		if !ok {
-			return errMsg{fmt.Errorf("PAT %q not found — run :pats to add it", adoCfg.PAT)}
-		}
-		comments, err := azuredevops.FetchComments(adoCfg, token, snapshot.ADOItemID)
+		comments, err := provider.FetchComments(snapshot.ADOItemID)
 		if err != nil {
 			return errMsg{err}
 		}

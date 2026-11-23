@@ -60,13 +60,9 @@ func (m Model) startLoadingLinkedPRs(workItemID int) (Model, tea.Cmd) {
 	m.linkedPRs = nil
 	m.linkedPRsLoading = true
 	m.linkedPRsWorkItemID = workItemID
-	adoCfg := m.config.ActiveBoard().AzureDevOps
+	provider := m.adoProvider()
 	return m, func() tea.Msg {
-		token, ok := m.patStore.Get(adoCfg.PAT)
-		if !ok {
-			return errMsg{fmt.Errorf("PAT %q not found — run :pats to add it", adoCfg.PAT)}
-		}
-		prs, err := azuredevops.FetchLinkedPullRequests(adoCfg, token, workItemID)
+		prs, err := provider.FetchLinkedPullRequests(workItemID)
 		if err != nil {
 			return errMsg{err}
 		}
@@ -92,14 +88,10 @@ func (m Model) copyLinkedPRLinks() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	workItemID, cardTitle := t.ADOItemID, t.Title
-	adoCfg := m.config.ActiveBoard().AzureDevOps
+	provider := m.adoProvider()
 	m.message = "Fetching linked PRs..."
 	return m, func() tea.Msg {
-		token, ok := m.patStore.Get(adoCfg.PAT)
-		if !ok {
-			return errMsg{fmt.Errorf("PAT %q not found — run :pats to add it", adoCfg.PAT)}
-		}
-		links, err := azuredevops.FetchLinkedPullRequestLinks(adoCfg, token, workItemID)
+		links, err := provider.FetchLinkedPullRequestLinks(workItemID)
 		if err != nil {
 			return errMsg{err}
 		}
@@ -134,13 +126,9 @@ func (m Model) openPRPicker() (tea.Model, tea.Cmd) {
 	workItemID := t.ADOItemID
 	m.prPicker = prPickerState{workItemID: workItemID, loading: true}
 	m.mode = ModePRPicker
-	adoCfg := m.config.ActiveBoard().AzureDevOps
+	provider := m.adoProvider()
 	return m, func() tea.Msg {
-		token, ok := m.patStore.Get(adoCfg.PAT)
-		if !ok {
-			return errMsg{fmt.Errorf("PAT %q not found — run :pats to add it", adoCfg.PAT)}
-		}
-		prs, err := azuredevops.FetchMyLinkablePullRequests(adoCfg, token, workItemID)
+		prs, err := provider.FetchMyLinkablePullRequests(workItemID)
 		if err != nil {
 			return errMsg{err}
 		}
@@ -182,13 +170,9 @@ func (m Model) handlePRPickerMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m Model) linkPR(workItemID int, ref azuredevops.PullRequestRef) (tea.Model, tea.Cmd) {
 	m.message = fmt.Sprintf("Linking PR #%d...", ref.ID)
-	adoCfg := m.config.ActiveBoard().AzureDevOps
+	provider := m.adoProvider()
 	return m, func() tea.Msg {
-		token, ok := m.patStore.Get(adoCfg.PAT)
-		if !ok {
-			return errMsg{fmt.Errorf("PAT %q not found — run :pats to add it", adoCfg.PAT)}
-		}
-		if err := azuredevops.LinkPullRequest(adoCfg, token, workItemID, ref); err != nil {
+		if err := provider.LinkPullRequest(workItemID, ref); err != nil {
 			return errMsg{err}
 		}
 		return prLinkedMsg{workItemID: workItemID, prID: ref.ID}

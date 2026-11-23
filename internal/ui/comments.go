@@ -10,7 +10,6 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 
-	"cmdban/internal/azuredevops"
 	"cmdban/internal/task"
 )
 
@@ -79,13 +78,9 @@ func (m Model) startLoadingComments(t *task.Task) (Model, tea.Cmd) {
 }
 
 func (m Model) fetchComments(workItemID int) tea.Cmd {
-	adoCfg := m.config.ActiveBoard().AzureDevOps
+	provider := m.adoProvider()
 	return func() tea.Msg {
-		token, ok := m.patStore.Get(adoCfg.PAT)
-		if !ok {
-			return errMsg{fmt.Errorf("PAT %q not found — run :pats to add it", adoCfg.PAT)}
-		}
-		comments, err := azuredevops.FetchComments(adoCfg, token, workItemID)
+		comments, err := provider.FetchComments(workItemID)
 		if err != nil {
 			return errMsg{err}
 		}
@@ -179,13 +174,9 @@ func (m Model) handleCommentEditorFinished(msg commentEditorFinishedMsg) (tea.Mo
 }
 
 func (m Model) postComment(workItemID int, text string) tea.Cmd {
-	adoCfg := m.config.ActiveBoard().AzureDevOps
+	provider := m.adoProvider()
 	return func() tea.Msg {
-		token, ok := m.patStore.Get(adoCfg.PAT)
-		if !ok {
-			return errMsg{fmt.Errorf("PAT %q not found — run :pats to add it", adoCfg.PAT)}
-		}
-		if err := azuredevops.AddComment(adoCfg, token, workItemID, text); err != nil {
+		if err := provider.AddComment(workItemID, text); err != nil {
 			return errMsg{err}
 		}
 		return commentAddedMsg{workItemID: workItemID}

@@ -18,6 +18,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 
+	"cmdban/internal/app"
 	"cmdban/internal/applog"
 	"cmdban/internal/azuredevops"
 	"cmdban/internal/checkboxdraft"
@@ -254,31 +255,23 @@ func (m Model) Init() tea.Cmd {
 }
 
 func (m Model) loadTasks() tea.Msg {
-	if m.config.IsADOBoard() {
-		return m.loadADOTasks()
-	}
-	tasks, err := task.LoadTasksFromDirectory(m.config.TaskDirectory(), m.config.IgnoreFiles)
+	tasks, err := m.taskService().Load()
 	if err != nil {
 		return errMsg{err}
 	}
 	return tasksLoadedMsg{tasks: tasks}
 }
 
-func (m Model) loadADOTasks() tea.Msg {
-	adoCfg := m.config.ActiveBoard().AzureDevOps
-	token, ok := m.patStore.Get(adoCfg.PAT)
-	if !ok {
-		return errMsg{fmt.Errorf("PAT %q not found — run :pats to add it", adoCfg.PAT)}
+func (m Model) taskService() *app.TaskService {
+	var remote app.RemoteProvider
+	if m.config.IsADOBoard() {
+		remote = m.adoProvider()
 	}
-	tasks, diag, err := azuredevops.FetchBoardTasks(adoCfg, token)
-	if err != nil {
-		return errMsg{err}
-	}
-	m.logs.Info(fmt.Sprintf(
-		"ADO sync %s/%s/%s source=%s iteration=%q: fetched %d, showing %d",
-		adoCfg.Org, adoCfg.Project, adoCfg.Team, diag.Source, diag.IterationPath, diag.FetchedCount, diag.ReturnedCount,
-	))
-	return tasksLoadedMsg{tasks: tasks}
+	return app.NewTaskService(m.config.TaskDirectory(), m.config.IgnoreFiles, remote)
+}
+
+func (m Model) adoProvider() *azuredevops.Provider {
+	return azuredevops.NewProvider(m.config.ActiveBoard().AzureDevOps, m.patStore.Get, m.logs.Info)
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -1455,24 +1448,12 @@ func (m Model) addTagToTask(tag string) (tea.Model, tea.Cmd) {
 	}
 
 	if m.config.IsADOBoard() {
-		adoCfg := m.config.ActiveBoard().AzureDevOps
 		m.message = fmt.Sprintf("Adding tag %q in Azure DevOps...", tag)
-		return m, func() tea.Msg {
-			token, ok := m.patStore.Get(adoCfg.PAT)
-			if !ok {
-				return errMsg{fmt.Errorf("PAT %q not found — run :pats to add it", adoCfg.PAT)}
-			}
-			if err := azuredevops.AddRemoteTag(adoCfg, token, t, tag); err != nil {
-				return errMsg{err}
-			}
-			return taskSavedMsg{t}
-		}
 	}
-
-	t.Tags = append(t.Tags, tag)
-
+	service := m.taskService()
+	service.ApplyTag(t, tag)
 	return m, func() tea.Msg {
-		if err := task.WriteMarkdownFile(t); err != nil {
+		if err := service.PersistTag(t, tag); err != nil {
 			return errMsg{err}
 		}
 		return taskSavedMsg{t}
@@ -1602,16 +1583,11 @@ func (m Model) createTask(title, workItemType string) (tea.Model, tea.Cmd) {
 
 	if m.config.IsADOBoard() {
 		m.message = fmt.Sprintf("Creating %s...", workItemType)
-		return m, m.createADOTask(title, workItemType, lane)
 	}
-
+	service := m.taskService()
 	return m, func() tea.Msg {
-		t, err := task.CreateNewTask(m.config.TaskDirectory(), title)
+		t, err := service.Create(title, workItemType, lane)
 		if err != nil {
-			return errMsg{err}
-		}
-		t.Status = lane
-		if err := task.WriteMarkdownFile(t); err != nil {
 			return errMsg{err}
 		}
 		return taskSavedMsg{t}
@@ -1628,21 +1604,6 @@ func (m Model) newTaskLane() task.Status {
 	return m.board.Lanes[m.activeLane]
 }
 
-func (m Model) createADOTask(title, workItemType string, lane task.Status) tea.Cmd {
-	adoCfg := m.config.ActiveBoard().AzureDevOps
-	return func() tea.Msg {
-		token, ok := m.patStore.Get(adoCfg.PAT)
-		if !ok {
-			return errMsg{fmt.Errorf("PAT %q not found — run :pats to add it", adoCfg.PAT)}
-		}
-		t, err := azuredevops.CreateRemoteTask(adoCfg, token, title, workItemType, lane)
-		if err != nil {
-			return errMsg{err}
-		}
-		return taskSavedMsg{t}
-	}
-}
-
 func (m Model) editTask(title string) (tea.Model, tea.Cmd) {
 	m.mode = ModeNormal
 	t := m.selectedTask()
@@ -1650,25 +1611,9 @@ func (m Model) editTask(title string) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	if m.config.IsADOBoard() {
-		adoCfg := m.config.ActiveBoard().AzureDevOps
-		snapshot := t
-		return m, func() tea.Msg {
-			token, ok := m.patStore.Get(adoCfg.PAT)
-			if !ok {
-				return errMsg{fmt.Errorf("PAT %q not found — run :pats to add it", adoCfg.PAT)}
-			}
-			if err := azuredevops.UpdateRemoteTitle(adoCfg, token, snapshot, title); err != nil {
-				return errMsg{err}
-			}
-			snapshot.Title = title
-			return taskSavedMsg{snapshot}
-		}
-	}
-
+	service := m.taskService()
 	return m, func() tea.Msg {
-		t.Title = title
-		if err := task.WriteMarkdownFile(t); err != nil {
+		if err := service.UpdateTitle(t, title); err != nil {
 			return errMsg{err}
 		}
 		return taskSavedMsg{t}
@@ -1686,8 +1631,9 @@ func (m Model) deleteTask() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	service := m.taskService()
 	return m, func() tea.Msg {
-		if err := task.ArchiveTask(t); err != nil {
+		if err := service.Archive(t); err != nil {
 			return errMsg{err}
 		}
 		return taskSavedMsg{}
@@ -1703,11 +1649,10 @@ func (m Model) clearLane() (tea.Model, tea.Cmd) {
 	lane := m.board.Lanes[m.activeLane]
 	tasks := slices.Clone(m.board.Tasks[lane])
 
+	service := m.taskService()
 	return m, func() tea.Msg {
-		for _, t := range tasks {
-			if err := task.ArchiveTask(t); err != nil {
-				return errMsg{err}
-			}
+		if err := service.Archive(tasks...); err != nil {
+			return errMsg{err}
 		}
 		return taskSavedMsg{}
 	}
@@ -1808,17 +1753,11 @@ func (m Model) handleADOEditorFinished(msg adoEditorFinishedMsg) (tea.Model, tea
 }
 
 func (m Model) pushADOWorkItemEdit(t *task.Task, title, description string) tea.Cmd {
-	adoCfg := m.config.ActiveBoard().AzureDevOps
+	service := m.taskService()
 	return func() tea.Msg {
-		token, ok := m.patStore.Get(adoCfg.PAT)
-		if !ok {
-			return errMsg{fmt.Errorf("PAT %q not found — run :pats to add it", adoCfg.PAT)}
-		}
-		if err := azuredevops.UpdateRemoteTitleAndDescription(adoCfg, token, t, title, description); err != nil {
+		if err := service.UpdateTitleAndDescription(t, title, description); err != nil {
 			return errMsg{err}
 		}
-		t.Title = title
-		t.Description = description
 		return taskSavedMsg{t}
 	}
 }
@@ -1987,8 +1926,9 @@ func (m Model) applyMove(t *task.Task, lane task.Status, fromMode Mode) (tea.Mod
 	if m.config.IsADOBoard() {
 		return m, m.pushADOStateChange(t, lane)
 	}
+	service := m.taskService()
 	return m, func() tea.Msg {
-		if err := task.WriteMarkdownFile(t); err != nil {
+		if err := service.PersistMove(t, lane); err != nil {
 			return errMsg{err}
 		}
 		return taskSavedMsg{t}
@@ -2099,8 +2039,9 @@ func (m Model) moveTaskToBoard(target *config.Board) (tea.Model, tea.Cmd) {
 	m.board.RemoveTask(t)
 	m.clampSelection()
 
+	service := m.taskService()
 	return m, func() tea.Msg {
-		if _, err := task.CopyTaskToDirectory(t, targetDir, newStatus, sourceURL); err != nil {
+		if err := service.TransferToDirectory(t, targetDir, newStatus, sourceURL); err != nil {
 			return errMsg{err}
 		}
 
@@ -2110,9 +2051,6 @@ func (m Model) moveTaskToBoard(target *config.Board) (tea.Model, tea.Cmd) {
 			}
 		}
 
-		if err := os.Remove(t.FilePath); err != nil && !os.IsNotExist(err) {
-			return errMsg{err}
-		}
 		return taskMovedMsg{
 			message: fmt.Sprintf("Moved task to board %q", targetName),
 			reload:  true,
@@ -2121,14 +2059,9 @@ func (m Model) moveTaskToBoard(target *config.Board) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) pushADOStateChange(t *task.Task, newLane task.Status) tea.Cmd {
-	adoCfg := m.config.ActiveBoard().AzureDevOps
-	snapshot := t
+	service := m.taskService()
 	return func() tea.Msg {
-		token, ok := m.patStore.Get(adoCfg.PAT)
-		if !ok {
-			return errMsg{fmt.Errorf("PAT %q not found — run :pats to add it", adoCfg.PAT)}
-		}
-		if err := azuredevops.PushStateChange(adoCfg, token, snapshot, newLane); err != nil {
+		if err := service.PersistMove(t, newLane); err != nil {
 			return adoMoveFailedMsg{err}
 		}
 		return adoStateUpdatedMsg{}
@@ -2201,15 +2134,11 @@ func (m Model) reorderTask(delta int) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) saveLaneOrder(lane task.Status) tea.Cmd {
-	snapshot := make([]*task.Task, len(m.board.Tasks[lane]))
-	copy(snapshot, m.board.Tasks[lane])
-
+	snapshot := slices.Clone(m.board.Tasks[lane])
+	service := m.taskService()
 	return func() tea.Msg {
-		for i, t := range snapshot {
-			t.Order = i + 1
-			if err := task.WriteMarkdownFile(t); err != nil {
-				return errMsg{err}
-			}
+		if err := service.SaveOrder(snapshot); err != nil {
+			return errMsg{err}
 		}
 		return taskOrderSavedMsg{}
 	}
@@ -2223,8 +2152,9 @@ func (m Model) toggleMark() (tea.Model, tea.Cmd) {
 
 	t.Marked = !t.Marked
 
+	service := m.taskService()
 	return m, func() tea.Msg {
-		if err := task.WriteMarkdownFile(t); err != nil {
+		if err := service.SaveMetadata(t); err != nil {
 			return errMsg{err}
 		}
 		return taskSavedMsg{t}
