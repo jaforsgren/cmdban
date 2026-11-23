@@ -61,6 +61,21 @@ Checkbox toggles on a work item stay local until saved, shown by a `*` after the
 
 Cards with comments added since you last opened them show 💬 before the title. Opening the comments view or pane marks them read; the read state lives in `~/.cmdban-comment-reads.yaml`, and a work item's existing comments count as read the first time it syncs.
 
+## Visual select
+
+Press `V` on the board to select a range. Cards marked with `m` are included too, across lanes. Each action below is one `u` undo step.
+
+| Key | Action |
+|---|---|
+| `j` / `k` | Extend the range |
+| `m` | Move to a lane, typed by name |
+| `t` | Add a tag |
+| `p` | Set priority (local boards) |
+| `a` / `d` | Archive, after `y`/`n` (local boards) |
+| `esc` / `V` | Exit |
+
+On Azure DevOps boards, moves and tags ask for `y`/`n` before writing.
+
 ## Task view
 
 | Key | Action |

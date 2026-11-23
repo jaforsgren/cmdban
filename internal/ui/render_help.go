@@ -77,6 +77,7 @@ func helpSections() []helpSection {
 	}{
 		{"Task view", ModeView},
 		{"Focus", ModeFocus},
+		{"Visual select", ModeVisual},
 		{"Comments", ModeComments},
 		{"Board switcher", ModeBoardSelector},
 		{"Move to board", ModeMoveBoard},

@@ -95,6 +95,7 @@ const (
 	ModeWiki
 	ModeWikiView
 	ModeWikiPicker
+	ModeVisual
 )
 
 type Model struct {
@@ -150,6 +151,8 @@ type Model struct {
 	prPicker            prPickerState
 
 	pendingMove pendingMove
+	visual      visualState
+	pendingBulk pendingBulk
 	// deleteReturnMode is the screen the delete prompt was opened from.
 	deleteReturnMode Mode
 
@@ -391,6 +394,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case historyAppliedMsg:
 		return m.handleHistoryApplied(msg)
 
+	case bulkAppliedMsg:
+		return m.handleBulkApplied(msg)
+
 	case adoMarkdownReadyMsg:
 		return m.handleADOMarkdownReady(msg)
 
@@ -472,6 +478,14 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if !m.isTextEntryMode() && key.Matches(msg, m.keys.ToggleTopBar) {
 		m.gPressed = false
 		return m.toggleTopBar()
+	}
+
+	if m.mode == ModeVisual {
+		return m.handleVisualMode(msg)
+	}
+
+	if m.mode == ModeNormal && key.Matches(msg, m.keys.VisualMode) {
+		return m.enterVisualMode()
 	}
 
 	if m.mode == ModeHelp {
@@ -787,6 +801,10 @@ func (m Model) handleInputMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
+		if isBulkAction(m.inputAction) {
+			return m.submitBulkInput(value)
+		}
+
 		switch m.inputAction {
 		case inputActionNewTask:
 			return m.createTask(value, m.defaultWorkItemType())
@@ -907,6 +925,9 @@ func (m Model) handleConfirmMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	switch msg.String() {
 	case "y", "Y":
+		if isBulkAction(m.inputAction) {
+			return m.applyBulk()
+		}
 		if m.inputAction == inputActionDelete {
 			return m.deleteTask()
 		}
@@ -2568,6 +2589,8 @@ func tagBarColor(tag string) lipgloss.Color {
 
 func (m Model) renderTask(t *task.Task, selected bool, width int, groupColor lipgloss.Color) string {
 	isDone := t.Status == task.StatusDone
+	visuallySelected := m.isVisuallySelected(t)
+	selected = selected || visuallySelected
 
 	var style lipgloss.Style
 	switch {
@@ -2593,8 +2616,11 @@ func (m Model) renderTask(t *task.Task, selected bool, width int, groupColor lip
 	}
 
 	prefix := ""
+	if visuallySelected {
+		prefix = visualSelectionMarker
+	}
 	if t.Marked {
-		prefix = "✓ "
+		prefix += "✓ "
 	}
 	if m.hasUnreadComments(t) {
 		prefix += unreadCommentsMarker
@@ -2684,7 +2710,14 @@ func (m Model) renderFooter() string {
 		return input
 	}
 
+	if m.mode == ModeVisual {
+		return StatusBarStyle.Foreground(WarningColor).Render(ansi.Truncate(m.visualStatusLine(), max(m.width-footerPaddingCols, 0), "…"))
+	}
+
 	if m.mode == ModeConfirm {
+		if isBulkAction(m.inputAction) {
+			return DialogStyle.Render(m.bulkConfirmPrompt())
+		}
 		if m.inputAction == "clear-lane" {
 			return DialogStyle.Render("Archive all tasks in this lane? (y/n)")
 		}

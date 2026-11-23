@@ -157,6 +157,9 @@ func (m Model) inputReturnMode() Mode {
 	if m.inputAction == inputActionDelete {
 		return m.deleteReturnMode
 	}
+	if isBulkAction(m.inputAction) {
+		return ModeVisual
+	}
 	return ModeNormal
 }
 

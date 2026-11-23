@@ -64,6 +64,7 @@ type KeyMap struct {
 	SaveCheckboxes  key.Binding
 	Undo            key.Binding
 	Redo            key.Binding
+	VisualMode      key.Binding
 }
 
 var DefaultKeyMap = KeyMap{
@@ -274,5 +275,9 @@ var DefaultKeyMap = KeyMap{
 	Redo: key.NewBinding(
 		key.WithKeys(redoKey),
 		key.WithHelp(redoKey, "redo"),
+	),
+	VisualMode: key.NewBinding(
+		key.WithKeys(visualModeKey),
+		key.WithHelp(visualModeKey, "select multiple"),
 	),
 }

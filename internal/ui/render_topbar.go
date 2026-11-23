@@ -428,7 +428,7 @@ var (
 		{laneNavigationKeys, "lane"}, {taskNavigationKeys, "task"}, {"H/L", "move lane"}, {"enter", "view"}, {"tab", "focus"}, {"a", "new"},
 	}
 	boardShortcuts = []shortcut{
-		{"e", "edit"}, {"d", "toggle done"}, {"x", "delete"}, {undoKey, "undo"}, {redoKey, "redo"}, {checkboxToggleChord, "toggle checkbox"}, {"t", "tag"}, {"m", "mark"}, {"/", "search"},
+		{"e", "edit"}, {"d", "toggle done"}, {"x", "delete"}, {undoKey, "undo"}, {redoKey, "redo"}, {checkboxToggleChord, "toggle checkbox"}, {"t", "tag"}, {"m", "mark"}, {visualModeKey, "select multiple"}, {"/", "search"},
 		{"r", "refresh"}, {"R", "live reload"}, {"T", "toggle topbar"}, {".", "minimize lane"}, {"ctrl+b", "boards"}, {"ctrl+n", "next recent board"},
 		{"ctrl+m", "move board"}, {":", "command"}, {"?", "help"},
 	}
@@ -447,6 +447,11 @@ func shortcutsForMode(mode Mode) []shortcut {
 	switch mode {
 	case ModeInput, ModeCommand, ModeADOSetup:
 		return []shortcut{{"enter", "confirm"}, {"esc", "cancel"}, {taskNavigationKeys, "navigate lists"}}
+	case ModeVisual:
+		return []shortcut{
+			{"j/k", "extend"}, {visualMoveKey, "move to lane"}, {visualPriorityKey, "priority"}, {visualTagKey, "tag"},
+			{visualArchiveKey + "/" + visualDeleteKey, "archive"}, {"esc/" + visualModeKey, "exit"},
+		}
 	case ModeTag:
 		return []shortcut{{"enter", "add tag"}, {"↑/↓", "pick"}, {"tab", "complete"}, {"esc", "cancel"}}
 	case ModeSearch:
@@ -528,6 +533,8 @@ func (m Model) modeName() string {
 		return "COMMENTS"
 	case ModeFocus:
 		return "FOCUS"
+	case ModeVisual:
+		return "VISUAL"
 	case ModeMoveBoard:
 		return "MOVE"
 	case ModePRPicker:
