@@ -172,6 +172,8 @@ func (w NewWorkItem) patchOperations() []PatchOperation {
 }
 
 const (
+	fieldTitle       = "System.Title"
+	fieldState       = "System.State"
 	fieldTags        = "System.Tags"
 	fieldDescription = "System.Description"
 	fieldReproSteps  = "Microsoft.VSTS.TCM.ReproSteps"

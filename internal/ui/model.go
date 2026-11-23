@@ -103,6 +103,7 @@ type Model struct {
 	patStore           *pat.Store
 	commentReads       *commentread.Store
 	checkboxDrafts     *checkboxdraft.Store
+	histories          *app.HistoryRegistry
 	keys               KeyMap
 	textInput          textinput.Model
 	mdRenderer         *markdown.Renderer
@@ -192,6 +193,9 @@ type taskMovedMsg struct {
 
 type editorFinishedMsg struct {
 	filePath string
+	// contentBefore is nil when the file couldn't be read before editing,
+	// which leaves the edit out of undo history.
+	contentBefore []byte
 }
 
 type adoEditorFinishedMsg struct {
@@ -237,6 +241,7 @@ func NewModel(cfg *config.Config) Model {
 		patStore:         patStore,
 		commentReads:     commentReads,
 		checkboxDrafts:   checkboxDrafts,
+		histories:        app.NewHistoryRegistry(),
 		keys:             DefaultKeyMap,
 		textInput:        ti,
 		mdRenderer:       mdRenderer,
@@ -267,7 +272,7 @@ func (m Model) taskService() *app.TaskService {
 	if m.config.IsADOBoard() {
 		remote = m.adoProvider()
 	}
-	return app.NewTaskService(m.config.TaskDirectory(), m.config.IgnoreFiles, remote)
+	return app.NewTaskService(m.config.TaskDirectory(), m.config.IgnoreFiles, remote, m.histories.For(m.config.CurrentBoard))
 }
 
 func (m Model) adoProvider() *azuredevops.Provider {
@@ -381,7 +386,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case editorFinishedMsg:
-		return m, m.loadTasks
+		return m.handleEditorFinished(msg)
+
+	case historyAppliedMsg:
+		return m.handleHistoryApplied(msg)
 
 	case adoMarkdownReadyMsg:
 		return m.handleADOMarkdownReady(msg)
@@ -448,6 +456,17 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.handlesCheckboxShortcuts() && key.Matches(msg, m.keys.SaveCheckboxes) {
 		m.gPressed = false
 		return m.saveCheckboxDraft()
+	}
+
+	if m.handlesHistoryKeys() {
+		switch {
+		case key.Matches(msg, m.keys.Undo):
+			m.gPressed = false
+			return m.undoLastChange()
+		case key.Matches(msg, m.keys.Redo):
+			m.gPressed = false
+			return m.redoLastChange()
+		}
 	}
 
 	if !m.isTextEntryMode() && key.Matches(msg, m.keys.ToggleTopBar) {
@@ -1582,7 +1601,7 @@ func (m Model) createTask(title, workItemType string) (tea.Model, tea.Cmd) {
 	lane := m.newTaskLane()
 
 	if m.config.IsADOBoard() {
-		m.message = fmt.Sprintf("Creating %s...", workItemType)
+		m.message = fmt.Sprintf("Creating %s (can't be undone)...", workItemType)
 	}
 	service := m.taskService()
 	return m, func() tea.Msg {
@@ -1669,9 +1688,13 @@ func editorCommand(filePath string) *exec.Cmd {
 }
 
 func (m Model) openInEditor(filePath string) tea.Cmd {
+	contentBefore, readErr := os.ReadFile(filePath)
+	if readErr != nil {
+		contentBefore = nil
+	}
 	c := editorCommand(filePath)
 	return tea.ExecProcess(c, func(err error) tea.Msg {
-		return editorFinishedMsg{filePath: filePath}
+		return editorFinishedMsg{filePath: filePath, contentBefore: contentBefore}
 	})
 }
 

@@ -428,7 +428,7 @@ var (
 		{laneNavigationKeys, "lane"}, {taskNavigationKeys, "task"}, {"H/L", "move lane"}, {"enter", "view"}, {"tab", "focus"}, {"a", "new"},
 	}
 	boardShortcuts = []shortcut{
-		{"e", "edit"}, {"d", "toggle done"}, {"x", "delete"}, {checkboxToggleChord, "toggle checkbox"}, {"t", "tag"}, {"m", "mark"}, {"/", "search"},
+		{"e", "edit"}, {"d", "toggle done"}, {"x", "delete"}, {undoKey, "undo"}, {redoKey, "redo"}, {checkboxToggleChord, "toggle checkbox"}, {"t", "tag"}, {"m", "mark"}, {"/", "search"},
 		{"r", "refresh"}, {"R", "live reload"}, {"T", "toggle topbar"}, {".", "minimize lane"}, {"ctrl+b", "boards"}, {"ctrl+n", "next recent board"},
 		{"ctrl+m", "move board"}, {":", "command"}, {"?", "help"},
 	}
@@ -458,13 +458,13 @@ func shortcutsForMode(mode Mode) []shortcut {
 	case ModeView:
 		return []shortcut{
 			{closeKey, "back"}, {taskNavigationKeys, "scroll"}, {"tab", "PRs & comments pane"}, {"J/K", "scroll comments"}, {"c", "comments view"}, {"l", "link my PR"},
-			{"H/L", "move lane"}, {"e", "edit"}, {"d", "toggle done"}, {"x", "delete"}, {checkboxToggleChord, "toggle checkbox"},
+			{"H/L", "move lane"}, {"e", "edit"}, {"d", "toggle done"}, {"x", "delete"}, {undoKey, "undo"}, {redoKey, "redo"}, {checkboxToggleChord, "toggle checkbox"},
 			{"ctrl+g", "editor"}, {"M", "card as markdown"}, {"ctrl+o", "open card in browser"}, {copyURLChord, "copy card link"}, {copyPRLinksChord, "copy linked PRs"}, {"ctrl+m", "move board"}, {"r", "refresh"},
 		}
 	case ModeFocus:
 		return []shortcut{
 			{"tab/q", "exit focus"}, {"enter", "open card"}, {taskNavigationKeys, "select"}, {laneNavigationKeys, "lane"}, {"H/L", "move lane"}, {"a", "new"}, {"b", "new bug"}, {"e", "edit"},
-			{checkboxToggleChord, "toggle checkbox"}, {"t", "tag"}, {"m", "mark"}, {"c", "comments"}, {"M", "card as markdown"}, {"ctrl+o", "open card in browser"}, {copyURLChord, "copy card link"}, {copyPRLinksChord, "copy linked PRs"}, {"r", "refresh"},
+			{undoKey, "undo"}, {redoKey, "redo"}, {checkboxToggleChord, "toggle checkbox"}, {"t", "tag"}, {"m", "mark"}, {"c", "comments"}, {"M", "card as markdown"}, {"ctrl+o", "open card in browser"}, {copyURLChord, "copy card link"}, {copyPRLinksChord, "copy linked PRs"}, {"r", "refresh"},
 		}
 	case ModeBoardSelector:
 		return []shortcut{{taskNavigationKeys, "navigate"}, {"enter", "switch"}, {"a", "new local board"}, {"A", "new ADO board"}, {closeKey, "close"}}

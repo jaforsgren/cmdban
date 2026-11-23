@@ -20,6 +20,7 @@ Press `?` inside cmdban for the same list, grouped by view.
 | `m` | Mark task |
 | `x` / `ctrl+d` | Delete task (asks `y`/`n`) |
 | `x` then `1`–`9` | Toggle that checkbox on the card; the task view shows each checkbox's number |
+| `u` / `ctrl+r` | Undo / redo moves, edits, tags, marks, reordering, archiving, creating, and moves to another board. History lasts for the session, per board, and undo refuses to overwrite a card changed since |
 | `H` / `L` | Move task left / right |
 | `ctrl+k` / `ctrl+j` | Reorder task up / down |
 | `/` | Search titles and tags (`esc` clears) |

@@ -2,7 +2,10 @@ package azuredevops
 
 import (
 	"fmt"
+	"reflect"
+	"strings"
 
+	"cmdban/internal/app"
 	"cmdban/internal/config"
 	"cmdban/internal/task"
 )
@@ -81,6 +84,69 @@ func (p *Provider) AddTag(t *task.Task, tag string) error {
 		return err
 	}
 	return AddRemoteTag(p.config, token, t, tag)
+}
+
+func (p *Provider) undoableFields() []string {
+	fields := []string{fieldTitle, fieldDescription, fieldState, fieldTags}
+	if p.config.BoardColumnField != "" {
+		fields = append(fields, p.config.BoardColumnField)
+	}
+	return fields
+}
+
+func (p *Provider) client(token string) *Client {
+	return NewClient(p.config.Org, p.config.Project, p.config.Team, token)
+}
+
+// Snapshot reads raw field values because the board's markdown is a lossy
+// conversion of the HTML ADO stores.
+func (p *Provider) Snapshot(t *task.Task) (app.RemoteSnapshot, error) {
+	token, err := p.token()
+	if err != nil {
+		return app.RemoteSnapshot{}, err
+	}
+	client := p.client(token)
+	var item rawWorkItem
+	fieldsURL := client.workItemURL(t.ADOItemID) + "&fields=" + strings.Join(p.undoableFields(), ",")
+	if err := client.get(fieldsURL, &item); err != nil {
+		return app.RemoteSnapshot{}, fmt.Errorf("reading work item %d: %w", t.ADOItemID, err)
+	}
+	return app.RemoteSnapshot{Revision: item.Rev, Fields: item.Fields}, nil
+}
+
+// Restore relies on the revision test to make ADO reject the write when the
+// work item changed after current was read.
+func (p *Provider) Restore(t *task.Task, current, target app.RemoteSnapshot) (int, error) {
+	ops := p.restoreOperations(current, target)
+	if len(ops) == 0 {
+		return current.Revision, nil
+	}
+	token, err := p.token()
+	if err != nil {
+		return 0, err
+	}
+	client := p.client(token)
+	var updated rawWorkItem
+	payload := append([]PatchOperation{revisionTest(current.Revision)}, ops...)
+	if err := client.patchJSON(client.workItemURL(t.ADOItemID), "application/json-patch+json", payload, &updated); err != nil {
+		return 0, fmt.Errorf("restoring work item %d (it may have changed in Azure DevOps): %w", t.ADOItemID, err)
+	}
+	return updated.Rev, nil
+}
+
+func (p *Provider) restoreOperations(current, target app.RemoteSnapshot) []PatchOperation {
+	var ops []PatchOperation
+	for _, field := range p.undoableFields() {
+		targetValue, hasTarget := target.Fields[field]
+		currentValue, hasCurrent := current.Fields[field]
+		switch {
+		case hasTarget && (!hasCurrent || !reflect.DeepEqual(currentValue, targetValue)):
+			ops = append(ops, PatchOperation{Op: "add", Path: "/fields/" + field, Value: targetValue})
+		case !hasTarget && hasCurrent:
+			ops = append(ops, PatchOperation{Op: "remove", Path: "/fields/" + field})
+		}
+	}
+	return ops
 }
 
 func (p *Provider) FetchComments(workItemID int) ([]Comment, error) {

@@ -62,6 +62,8 @@ type KeyMap struct {
 	Fold            key.Binding
 	FoldAll         key.Binding
 	SaveCheckboxes  key.Binding
+	Undo            key.Binding
+	Redo            key.Binding
 }
 
 var DefaultKeyMap = KeyMap{
@@ -162,7 +164,7 @@ var DefaultKeyMap = KeyMap{
 		key.WithHelp("f", "filter by tag"),
 	),
 	Refresh: key.NewBinding(
-		key.WithKeys("r", "ctrl+r"),
+		key.WithKeys("r"),
 		key.WithHelp("r", "refresh"),
 	),
 	OpenEditor: key.NewBinding(
@@ -264,5 +266,13 @@ var DefaultKeyMap = KeyMap{
 	SaveCheckboxes: key.NewBinding(
 		key.WithKeys(checkboxSaveKey),
 		key.WithHelp(checkboxSaveKey, "save checkboxes to ADO"),
+	),
+	Undo: key.NewBinding(
+		key.WithKeys(undoKey),
+		key.WithHelp(undoKey, "undo"),
+	),
+	Redo: key.NewBinding(
+		key.WithKeys(redoKey),
+		key.WithHelp(redoKey, "redo"),
 	),
 }

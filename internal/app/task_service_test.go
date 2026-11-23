@@ -21,6 +21,18 @@ type fakeRemote struct {
 	err        error
 	movedTo    task.Status
 	titleCalls int
+
+	restoreRevision int
+	restoredFrom    int
+}
+
+func (f *fakeRemote) Snapshot(t *task.Task) (RemoteSnapshot, error) {
+	return RemoteSnapshot{Fields: map[string]any{"title": t.Title}}, nil
+}
+
+func (f *fakeRemote) Restore(_ *task.Task, current, _ RemoteSnapshot) (int, error) {
+	f.restoredFrom = current.Revision
+	return f.restoreRevision, f.err
 }
 
 func (f *fakeRemote) Pull() ([]*task.Task, error) { return f.pulled, f.err }
@@ -50,7 +62,7 @@ func (f *fakeRemote) AddTag(t *task.Task, tag string) error {
 
 func newLocalTask(t *testing.T) (*TaskService, *task.Task) {
 	t.Helper()
-	service := NewTaskService(t.TempDir(), nil, nil)
+	service := NewTaskService(t.TempDir(), nil, nil, NewHistory())
 	created, err := service.Create(testTitle, "", testLane)
 	if err != nil {
 		t.Fatalf("Create: %v", err)
@@ -134,7 +146,7 @@ func TestTransferRemovesLocalSource(t *testing.T) {
 
 func TestTransferKeepsRemoteTaskOnRemote(t *testing.T) {
 	remote := &fakeRemote{}
-	service := NewTaskService(t.TempDir(), nil, remote)
+	service := NewTaskService(t.TempDir(), nil, remote, NewHistory())
 	source := &task.Task{Title: testTitle, Status: testLane}
 
 	if err := service.TransferToDirectory(source, t.TempDir(), testLane, ""); err != nil {
@@ -144,7 +156,7 @@ func TestTransferKeepsRemoteTaskOnRemote(t *testing.T) {
 
 func TestRemoteMoveDelegates(t *testing.T) {
 	remote := &fakeRemote{}
-	service := NewTaskService(t.TempDir(), nil, remote)
+	service := NewTaskService(t.TempDir(), nil, remote, NewHistory())
 
 	if err := service.PersistMove(&task.Task{}, testLane); err != nil {
 		t.Fatalf("PersistMove: %v", err)
@@ -156,7 +168,7 @@ func TestRemoteMoveDelegates(t *testing.T) {
 
 func TestRemoteTitleFailureLeavesTaskUnchanged(t *testing.T) {
 	remote := &fakeRemote{err: errRemoteFailed}
-	service := NewTaskService(t.TempDir(), nil, remote)
+	service := NewTaskService(t.TempDir(), nil, remote, NewHistory())
 	source := &task.Task{Title: testTitle}
 
 	err := service.UpdateTitle(source, "Changed")
@@ -170,7 +182,7 @@ func TestRemoteTitleFailureLeavesTaskUnchanged(t *testing.T) {
 
 func TestRemoteDescriptionFailureLeavesTaskUnchanged(t *testing.T) {
 	remote := &fakeRemote{err: errRemoteFailed}
-	service := NewTaskService(t.TempDir(), nil, remote)
+	service := NewTaskService(t.TempDir(), nil, remote, NewHistory())
 	source := &task.Task{Title: testTitle, Description: "Original"}
 
 	if err := service.UpdateTitleAndDescription(source, "Changed", "Changed"); !errors.Is(err, errRemoteFailed) {
