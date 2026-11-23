@@ -89,6 +89,7 @@ func adoTaskMarkdown(t *task.Task, url string, comments []azuredevops.Comment) s
 
 	b.WriteString("| Field | Value |\n|---|---|\n")
 	fmt.Fprintf(&b, "| Type | %s |\n", markdownCell(t.ADOWorkItemType))
+	fmt.Fprintf(&b, "| Author | %s |\n", markdownCell(t.ADOAuthor))
 	fmt.Fprintf(&b, "| Lane | %s |\n", markdownCell(string(t.Status)))
 	fmt.Fprintf(&b, "| Tags | %s |\n", markdownCell(strings.Join(markdownTags(t), ", ")))
 	fmt.Fprintf(&b, "| Comments | %d |\n", len(comments))

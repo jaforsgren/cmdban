@@ -18,7 +18,8 @@ Press `?` inside cmdban for the same list, grouped by view.
 | `d` | Toggle done |
 | `t` | Add tag — lists the board's tags matching what you type (all of them before you type); `↑`/`↓` or `ctrl+n`/`ctrl+p` pick, `tab` completes, `enter` adds |
 | `m` | Mark task |
-| `x` / `ctrl+d` | Delete task |
+| `x` / `ctrl+d` | Delete task (asks `y`/`n`) |
+| `x` then `1`–`9` | Toggle that checkbox on the card; the task view shows each checkbox's number |
 | `H` / `L` | Move task left / right |
 | `ctrl+k` / `ctrl+j` | Reorder task up / down |
 | `/` | Search titles and tags (`esc` clears) |
@@ -50,8 +51,12 @@ Press `?` inside cmdban for the same list, grouped by view.
 | `yp` | Copy the work item link to the clipboard |
 | `yr` | Copy the linked PRs to the clipboard: the card title, then one `repository: link` line per PR |
 | `O` | Open the board in the browser |
+| `ctrl+s` | Save the card's checkbox changes to Azure DevOps |
+| `x` then `u` | Discard the card's unsaved checkbox changes |
 
 Cards show a type glyph: ◆ story, ● bug, ▪ task, ★ feature, ♛ epic.
+
+Checkbox toggles on a work item stay local until saved, shown by a `*` after the card's count such as `2/4*`. They are kept in `~/.cmdban-checkbox-drafts.yaml`, so they survive refreshes and restarts.
 
 Cards with comments added since you last opened them show 💬 before the title. Opening the comments view or pane marks them read; the read state lives in `~/.cmdban-comment-reads.yaml`, and a work item's existing comments count as read the first time it syncs.
 

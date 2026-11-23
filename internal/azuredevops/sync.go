@@ -357,6 +357,11 @@ func workItemToTask(item WorkItem, cfg *config.AzureDevOpsConfig) *task.Task {
 		assignee = f.AssignedTo.DisplayName
 	}
 
+	var author string
+	if f.CreatedBy != nil {
+		author = f.CreatedBy.DisplayName
+	}
+
 	createdAt, _ := time.Parse(time.RFC3339, f.CreatedDate)
 	updatedAt, _ := time.Parse(time.RFC3339, f.ChangedDate)
 
@@ -368,7 +373,7 @@ func workItemToTask(item WorkItem, cfg *config.AzureDevOpsConfig) *task.Task {
 	}
 	tags = append(tags, adoTags...)
 
-	return &task.Task{
+	workItemTask := &task.Task{
 		ID:              fmt.Sprintf("ado-%d", f.ID),
 		Title:           f.Title,
 		Description:     desc,
@@ -381,9 +386,12 @@ func workItemToTask(item WorkItem, cfg *config.AzureDevOpsConfig) *task.Task {
 		ADOParentID:     f.Parent,
 		ADOWorkItemType: f.WorkItemType,
 		ADOCommentCount: f.CommentCount,
+		ADOAuthor:       author,
 		CreatedAt:       createdAt,
 		UpdatedAt:       updatedAt,
 	}
+	workItemTask.RefreshCheckboxCounts()
+	return workItemTask
 }
 
 const assignedToMeBoardFilter = "System.AssignedTo=%40me"

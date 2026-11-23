@@ -20,6 +20,7 @@ import (
 
 	"cmdban/internal/applog"
 	"cmdban/internal/azuredevops"
+	"cmdban/internal/checkboxdraft"
 	"cmdban/internal/commentread"
 	"cmdban/internal/config"
 	"cmdban/internal/markdown"
@@ -100,6 +101,7 @@ type Model struct {
 	config             *config.Config
 	patStore           *pat.Store
 	commentReads       *commentread.Store
+	checkboxDrafts     *checkboxdraft.Store
 	keys               KeyMap
 	textInput          textinput.Model
 	mdRenderer         *markdown.Renderer
@@ -146,6 +148,8 @@ type Model struct {
 	prPicker            prPickerState
 
 	pendingMove pendingMove
+	// deleteReturnMode is the screen the delete prompt was opened from.
+	deleteReturnMode Mode
 
 	wiki wikiState
 	// helpReturnMode is the screen closing help goes back to.
@@ -221,12 +225,17 @@ func NewModel(cfg *config.Config) Model {
 	if err != nil {
 		logs.Error("Error loading comment read state: " + err.Error())
 	}
+	checkboxDrafts, err := loadCheckboxDrafts()
+	if err != nil {
+		logs.Error("Error loading checkbox drafts: " + err.Error())
+	}
 
 	return Model{
 		board:            task.NewBoardWithColumns(cfg.AllColumns(), cfg.HiddenColumns()),
 		config:           cfg,
 		patStore:         patStore,
 		commentReads:     commentReads,
+		checkboxDrafts:   checkboxDrafts,
 		keys:             DefaultKeyMap,
 		textInput:        ti,
 		mdRenderer:       mdRenderer,
@@ -283,6 +292,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tasksLoadedMsg:
+		if m.config.IsADOBoard() {
+			m.applyCheckboxDrafts(msg.tasks)
+		}
 		m.board = task.NewBoardWithColumns(m.config.AllColumns(), m.config.HiddenColumns())
 		for _, t := range msg.tasks {
 			m.board.AddTask(t)
@@ -352,6 +364,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case prLinksLoadedMsg:
 		return m.handlePRLinksLoaded(msg)
+
+	case checkboxesSavedMsg:
+		return m.handleCheckboxesSaved(msg)
 
 	case errMsg:
 		m.err = msg.err
@@ -435,6 +450,11 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case yankPRLinksKey:
 			return m.copyLinkedPRLinks()
 		}
+	}
+
+	if m.handlesCheckboxShortcuts() && key.Matches(msg, m.keys.SaveCheckboxes) {
+		m.gPressed = false
+		return m.saveCheckboxDraft()
 	}
 
 	if !m.isTextEntryMode() && key.Matches(msg, m.keys.ToggleTopBar) {
@@ -619,9 +639,7 @@ func (m Model) handleNormalMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case key.Matches(msg, m.keys.Delete):
 		if m.selectedTask() != nil {
-			m.mode = ModeConfirm
-			m.inputAction = "delete"
-			m.gPressed = false
+			m.openDeleteConfirm()
 		}
 
 	case key.Matches(msg, m.keys.ToggleDone):
@@ -862,10 +880,22 @@ func (m Model) handleInputMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+func (m *Model) openDeleteConfirm() {
+	m.deleteReturnMode = m.mode
+	m.mode = ModeConfirm
+	m.inputAction = inputActionDelete
+	m.gPressed = false
+}
+
 func (m Model) handleConfirmMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.inputAction == inputActionDelete {
+		if updated, cmd, handled := m.handleCheckboxChord(msg.String()); handled {
+			return updated, cmd
+		}
+	}
 	switch msg.String() {
 	case "y", "Y":
-		if m.inputAction == "delete" {
+		if m.inputAction == inputActionDelete {
 			return m.deleteTask()
 		}
 		if m.inputAction == "clear-lane" {
@@ -987,8 +1017,7 @@ func (m Model) handleViewMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case key.Matches(msg, m.keys.Delete):
 		if m.selectedTask() != nil {
-			m.mode = ModeConfirm
-			m.inputAction = "delete"
+			m.openDeleteConfirm()
 		}
 		return m, nil
 
@@ -1164,9 +1193,7 @@ func (m Model) handleFocusMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case key.Matches(msg, m.keys.Delete):
 		if m.selectedTask() != nil {
-			m.mode = ModeConfirm
-			m.inputAction = "delete"
-			m.gPressed = false
+			m.openDeleteConfirm()
 		}
 		return m, nil
 
@@ -2276,6 +2303,9 @@ func (m Model) displayMode() Mode {
 	if m.mode == ModeConfirm && m.inputAction == inputActionMoveLane {
 		return m.pendingMove.returnMode
 	}
+	if m.mode == ModeConfirm && m.inputAction == inputActionDelete {
+		return m.deleteReturnMode
+	}
 	if (m.mode == ModeConfirm || m.mode == ModeInput) && isWikiInputAction(m.inputAction) {
 		return m.wiki.returnMode
 	}
@@ -2646,7 +2676,11 @@ func (m Model) renderTask(t *task.Task, selected bool, width int, groupColor lip
 
 	var checkboxCounter string
 	if t.CheckboxTotal > 0 {
-		checkboxCounter = metaStyle.Render(fmt.Sprintf(" %d/%d", t.CheckboxDone, t.CheckboxTotal))
+		unsaved := ""
+		if m.unsavedCheckboxCount(t) > 0 {
+			unsaved = unsavedCheckboxMarker
+		}
+		checkboxCounter = metaStyle.Render(fmt.Sprintf(" %d/%d%s", t.CheckboxDone, t.CheckboxTotal, unsaved))
 	}
 
 	box := style.Width(contentWidth).Render(title + adoBadge + tags + checkboxCounter)
@@ -2707,7 +2741,7 @@ func (m Model) renderFooter() string {
 		if isWikiInputAction(m.inputAction) {
 			return DialogStyle.Render(m.wikiInputPrompt())
 		}
-		return DialogStyle.Render("Delete task? (y/n)")
+		return DialogStyle.Render(m.deleteConfirmPrompt())
 	}
 
 	// Truncated rather than wrapped so the footer stays one row tall.
@@ -2751,7 +2785,7 @@ func (m Model) renderTaskDetailPane(width int, footerHint, adoFooterHint string)
 		return DialogStyle.Render("Error reading task: " + err.Error())
 	}
 
-	rendered := m.mdRenderer.Render(string(content))
+	rendered := m.mdRenderer.Render(task.NumberCheckboxes(string(content), firstCheckboxNumber))
 
 	lines := strings.Split(rendered, "\n")
 	availableHeight := m.bodyHeight() - detailPaneChromeRows
@@ -2809,12 +2843,12 @@ func (m Model) renderTaskDetailPane(width int, footerHint, adoFooterHint string)
 // adoDetailBodyLines renders the work item's description and repro steps
 // as markdown, wrapped to width so scrolling counts the lines actually shown.
 func (m Model) adoDetailBodyLines(t *task.Task, width int) []string {
-	body := t.Description
+	body, reproSteps := numberedADOFields(t)
 	if body == "" {
 		body = "*(no description)*"
 	}
-	if t.ReproSteps != "" {
-		body += "\n\n## Repro Steps\n\n" + t.ReproSteps
+	if reproSteps != "" {
+		body += "\n\n## Repro Steps\n\n" + reproSteps
 	}
 	return m.markdownLines(body, width)
 }
@@ -2830,8 +2864,14 @@ func (m Model) markdownLines(body string, width int) []string {
 func (m Model) renderADOTaskDetailPane(t *task.Task, width int, footerHint string) string {
 	var metaParts []string
 	metaParts = append(metaParts, "Status: "+string(t.Status))
+	if t.ADOAuthor != "" {
+		metaParts = append(metaParts, "Author: "+t.ADOAuthor)
+	}
 	if len(t.Tags) > 0 {
 		metaParts = append(metaParts, "Tags: "+strings.Join(t.Tags, ", "))
+	}
+	if unsaved := m.unsavedCheckboxCount(t); unsaved > 0 {
+		metaParts = append(metaParts, fmt.Sprintf("%d unsaved checkbox change(s), %s saves", unsaved, checkboxSaveKey))
 	}
 	return m.renderReadPane(width, m.viewScroll,
 		fmt.Sprintf("#%d  %s", t.ADOItemID, t.Title),

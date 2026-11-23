@@ -61,6 +61,7 @@ type KeyMap struct {
 	CommentsUp      key.Binding
 	Fold            key.Binding
 	FoldAll         key.Binding
+	SaveCheckboxes  key.Binding
 }
 
 var DefaultKeyMap = KeyMap{
@@ -259,5 +260,9 @@ var DefaultKeyMap = KeyMap{
 	FoldAll: key.NewBinding(
 		key.WithKeys("Z"),
 		key.WithHelp("Z", "expand / fold everything beneath"),
+	),
+	SaveCheckboxes: key.NewBinding(
+		key.WithKeys(checkboxSaveKey),
+		key.WithHelp(checkboxSaveKey, "save checkboxes to ADO"),
 	),
 }

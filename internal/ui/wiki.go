@@ -149,10 +149,13 @@ func isWikiInputAction(action string) bool {
 }
 
 // inputReturnMode is where cancelling a prompt or confirmation lands: the
-// wiki screen it came from, or the board.
+// wiki or task screen it came from, or the board.
 func (m Model) inputReturnMode() Mode {
 	if isWikiInputAction(m.inputAction) {
 		return m.wiki.returnMode
+	}
+	if m.inputAction == inputActionDelete {
+		return m.deleteReturnMode
 	}
 	return ModeNormal
 }

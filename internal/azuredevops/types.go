@@ -45,6 +45,7 @@ type WorkItemFields struct {
 	Tags          string       `json:"System.Tags"`
 	WorkItemType  string       `json:"System.WorkItemType"`
 	AssignedTo    *IdentityRef `json:"System.AssignedTo"`
+	CreatedBy     *IdentityRef `json:"System.CreatedBy"`
 	IterationPath string       `json:"System.IterationPath"`
 	ChangedDate   string       `json:"System.ChangedDate"`
 	CreatedDate   string       `json:"System.CreatedDate"`
@@ -96,6 +97,7 @@ func (f WorkItemFields) boardColumn(columnField string) string {
 
 type WorkItem struct {
 	ID     int            `json:"id"`
+	Rev    int            `json:"rev"`
 	Fields WorkItemFields `json:"fields"`
 }
 
@@ -170,7 +172,9 @@ func (w NewWorkItem) patchOperations() []PatchOperation {
 }
 
 const (
-	fieldTags = "System.Tags"
+	fieldTags        = "System.Tags"
+	fieldDescription = "System.Description"
+	fieldReproSteps  = "Microsoft.VSTS.TCM.ReproSteps"
 	// tagSeparator splits System.Tags; ADO writes "; " between tags and
 	// accepts ";" with or without the space on input.
 	tagSeparator       = ";"

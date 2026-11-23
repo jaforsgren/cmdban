@@ -67,10 +67,10 @@ func helpSections() []helpSection {
 	sections := []helpSection{
 		{"General", generalShortcuts},
 		{"Board", board},
-		{"Azure DevOps boards", adoBoardShortcuts},
+		{"Azure DevOps boards", slices.Concat(adoCheckboxShortcuts, adoBoardShortcuts)},
 		{helpCommandsTitle, commandHelp},
 	}
-	known := slices.Concat(board, adoBoardShortcuts)
+	known := slices.Concat(board, adoCheckboxShortcuts, adoBoardShortcuts)
 	for _, view := range []struct {
 		title string
 		mode  Mode

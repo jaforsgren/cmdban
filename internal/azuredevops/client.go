@@ -240,7 +240,7 @@ func (c *Client) FetchBacklogWorkItemIDs(backlogID string) ([]int, error) {
 
 const workItemBatchSize = 200
 
-const workItemFields = "System.Id,System.Title,System.State,System.Description,Microsoft.VSTS.TCM.ReproSteps,System.Tags,System.WorkItemType,System.AssignedTo,System.IterationPath,System.ChangedDate,System.CreatedDate,System.Parent,System.BoardColumn,System.CommentCount"
+const workItemFields = "System.Id,System.Title,System.State,System.Description,Microsoft.VSTS.TCM.ReproSteps,System.Tags,System.WorkItemType,System.AssignedTo,System.CreatedBy,System.IterationPath,System.ChangedDate,System.CreatedDate,System.Parent,System.BoardColumn,System.CommentCount"
 
 // workItemFieldList is the fields query value: the standard fields plus
 // extraFields, such as a board's WEF Kanban column field.
@@ -398,6 +398,18 @@ func (c *Client) UpdateWorkItemTitleAndDescription(id int, title, description st
 		{Op: "add", Path: "/fields/System.Title", Value: title},
 		{Op: "add", Path: "/fields/System.Description", Value: description},
 	}
+	return c.patchJSON(c.workItemURL(id), "application/json-patch+json", ops, nil)
+}
+
+// FetchWorkItemBody reads the raw description and repro steps with the
+// revision they belong to.
+func (c *Client) FetchWorkItemBody(id int) (WorkItem, error) {
+	var item WorkItem
+	err := c.get(c.workItemURL(id)+"&fields="+fieldDescription+","+fieldReproSteps, &item)
+	return item, err
+}
+
+func (c *Client) PatchWorkItem(id int, ops []PatchOperation) error {
 	return c.patchJSON(c.workItemURL(id), "application/json-patch+json", ops, nil)
 }
 

@@ -35,6 +35,7 @@ type Task struct {
 	ADOParentID     int
 	ADOWorkItemType string
 	ADOCommentCount int
+	ADOAuthor       string
 	// ADOTags are the work item's System.Tags only; Tags also carries the
 	// work item type and assignee for display and search.
 	ADOTags []string
@@ -49,6 +50,19 @@ type Task struct {
 type MetadataEntry struct {
 	Key   string
 	Value string
+}
+
+type Checkbox struct {
+	Label   string
+	Checked bool
+}
+
+// CheckboxChange is a toggle not yet saved to Azure DevOps. Label guards
+// against the numbering shifting if the work item is edited in the meantime.
+type CheckboxChange struct {
+	Number  int    `yaml:"number"`
+	Label   string `yaml:"label"`
+	Checked bool   `yaml:"checked"`
 }
 
 type Board struct {

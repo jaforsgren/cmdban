@@ -13,11 +13,6 @@ import (
 	"cmdban/internal/fsutil"
 )
 
-var (
-	checkedBoxRegex   = regexp.MustCompile(`(?m)^- \[x\]`)
-	uncheckedBoxRegex = regexp.MustCompile(`(?m)^- \[ \]`)
-)
-
 const (
 	titlePrefix  = "# "
 	taskFileMode = 0644
@@ -50,8 +45,7 @@ func ParseMarkdownFile(path string) (*Task, error) {
 	}
 
 	task.Description = strings.TrimSpace(strings.Join(lines, "\n"))
-	task.CheckboxDone = len(checkedBoxRegex.FindAllString(task.Description, -1))
-	task.CheckboxTotal = task.CheckboxDone + len(uncheckedBoxRegex.FindAllString(task.Description, -1))
+	task.RefreshCheckboxCounts()
 
 	parseFooter(task, footerLines)
 
