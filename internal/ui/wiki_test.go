@@ -2,6 +2,7 @@ package ui
 
 import (
 	"os"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -264,7 +265,7 @@ func TestWikiAddedIsSavedAndSelected(t *testing.T) {
 	if err != nil {
 		t.Fatalf("config.Load() error = %v", err)
 	}
-	if len(loaded.Wikis) != 3 || loaded.Wikis[2] != added {
+	if len(loaded.Wikis) != 3 || !reflect.DeepEqual(loaded.Wikis[2], added) {
 		t.Fatalf("saved wikis = %+v, want the added wiki last", loaded.Wikis)
 	}
 }
@@ -544,5 +545,82 @@ func TestPageFinderRanksTitleMatchesFirst(t *testing.T) {
 	}
 	if want := byteRange(len("Krav › Insurify › "), len("SIE")); !slices.Equal(got[0].matches, want) {
 		t.Fatalf("matches = %v, want the title's SIE highlighted %v", got[0].matches, want)
+	}
+}
+
+func favoritesTestModel(t *testing.T) Model {
+	t.Helper()
+	cfg := savableConfig(t, wikiTestConfig())
+	cfg.Wikis = wikiTestConfig().Wikis
+	return wikiTestModel(t, cfg)
+}
+
+func TestFMarksTheSelectedPageAsAFavoriteAndSavesIt(t *testing.T) {
+	m := typeInto(t, favoritesTestModel(t), "ljjf")
+
+	if !m.config.Wikis[0].IsFavorite("/Krav/Pay later") {
+		t.Fatalf("favorites = %v, want Pay later marked", m.config.Wikis[0].Favorites)
+	}
+	if row, _ := m.selectedWikiRow(); !strings.Contains(m.renderWikiRow(row, true, 80), wikiFavoriteMarker) {
+		t.Fatalf("row = %q, want the favorite marker", m.renderWikiRow(row, true, 80))
+	}
+	loaded, err := config.Load()
+	if err != nil {
+		t.Fatalf("config.Load() error = %v", err)
+	}
+	if !loaded.Wikis[0].IsFavorite("/Krav/Pay later") {
+		t.Fatalf("saved favorites = %v, want Pay later", loaded.Wikis[0].Favorites)
+	}
+}
+
+func TestFOnAFavoriteUnmarksIt(t *testing.T) {
+	m := typeInto(t, favoritesTestModel(t), "ff")
+	if len(m.config.Wikis[0].Favorites) != 0 {
+		t.Fatalf("favorites = %v, want none", m.config.Wikis[0].Favorites)
+	}
+}
+
+func TestShiftFListsOnlyFavoritePages(t *testing.T) {
+	m := typeInto(t, favoritesTestModel(t), "llljfjfF")
+
+	if m.mode != ModeWikiPicker || m.wiki.picker.kind != wikiPickerFavorites {
+		t.Fatalf("mode = %v, kind = %v; want the favorites picker", m.mode, m.wiki.picker.kind)
+	}
+	want := []string{"Krav › Insurify › SIE", "Krav › Insurify › Regler"}
+	if got := pickerLabels(m); !slices.Equal(got, want) {
+		t.Fatalf("results = %v, want %v", got, want)
+	}
+	if m = typeInto(t, m, "reg"); !slices.Equal(pickerLabels(m), []string{"Krav › Insurify › Regler"}) {
+		t.Fatalf("results = %v, want the query to filter the favorites", pickerLabels(m))
+	}
+}
+
+func TestEnterOnAFavoriteReadsIt(t *testing.T) {
+	m := typeInto(t, favoritesTestModel(t), "ljjfggF")
+	m = update(t, m, tea.KeyMsg{Type: tea.KeyEnter})
+
+	if m.mode != ModeWikiView || selectedTitle(t, m) != "Pay later" {
+		t.Fatalf("mode = %v, selected = %q; want Pay later read", m.mode, selectedTitle(t, m))
+	}
+}
+
+func TestFavoritesWorkFromThePageView(t *testing.T) {
+	m := update(t, favoritesTestModel(t), tea.KeyMsg{Type: tea.KeyEnter})
+	m = pressKey(t, m, "f")
+	if !m.config.Wikis[0].IsFavorite("/Krav") {
+		t.Fatalf("favorites = %v, want the read page marked", m.config.Wikis[0].Favorites)
+	}
+	if m = pressKey(t, m, "F"); m.mode != ModeWikiPicker {
+		t.Fatalf("mode = %v, want the favorites picker", m.mode)
+	}
+	if m = update(t, m, tea.KeyMsg{Type: tea.KeyEsc}); m.mode != ModeWikiView {
+		t.Fatalf("mode = %v, want back on the page view", m.mode)
+	}
+}
+
+func TestFavoritesPickerExplainsHowToAddWhenEmpty(t *testing.T) {
+	m := pressKey(t, favoritesTestModel(t), "F")
+	if got := m.renderPickerResults(80, 5); !strings.Contains(got, wikiPickerNoFavorites) {
+		t.Fatalf("results = %q, want the no favorites hint", got)
 	}
 }

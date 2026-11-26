@@ -20,6 +20,7 @@ type wikiPickerKind int
 const (
 	wikiPickerFindPages wikiPickerKind = iota
 	wikiPickerGrep
+	wikiPickerFavorites
 )
 
 const (
@@ -115,8 +116,11 @@ func (m Model) openWikiPicker(kind wikiPickerKind) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) wikiPickerPlaceholder() string {
-	if m.wiki.picker.kind == wikiPickerGrep {
+	switch m.wiki.picker.kind {
+	case wikiPickerGrep:
 		return "grep page contents..."
+	case wikiPickerFavorites:
+		return "find favorite pages..."
 	}
 	return "find pages..."
 }
@@ -153,10 +157,22 @@ func (m Model) appendWikiCandidates(candidates []wikiPickerResult, wikiIndex int
 	return candidates
 }
 
+// wikiPickerCandidates is the pages the picker searches: the favorite ones
+// for the favorites picker, every loaded page otherwise.
+func (m Model) wikiPickerCandidates() []wikiPickerResult {
+	candidates := m.wikiPageCandidates()
+	if m.wiki.picker.kind != wikiPickerFavorites {
+		return candidates
+	}
+	return slices.DeleteFunc(candidates, func(c wikiPickerResult) bool {
+		return !m.config.Wikis[c.wikiIndex].IsFavorite(c.key.path)
+	})
+}
+
 // refreshWikiPicker reruns the picker's search for the typed query.
 func (m *Model) refreshWikiPicker() {
 	query := m.textInput.Value()
-	candidates := m.wikiPageCandidates()
+	candidates := m.wikiPickerCandidates()
 	if m.wiki.picker.kind == wikiPickerGrep {
 		m.wiki.picker.results = m.grepWikiPages(candidates, query)
 	} else {
@@ -395,6 +411,9 @@ func (m Model) wikiPickerTitle() string {
 			return fmt.Sprintf("Grep Wiki (reading pages %d/%d)", fetched, total)
 		}
 		return "Grep Wiki"
+	}
+	if m.wiki.picker.kind == wikiPickerFavorites {
+		return "Favorite Pages"
 	}
 	return "Find Pages"
 }

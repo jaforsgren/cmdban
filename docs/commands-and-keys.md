@@ -125,6 +125,8 @@ Most board keys (`a`, `b`, `e`, `t`, `m`, `c`, `M`, `yp`, `yr`, `H` / `L`) work 
 | `M` | Open the page read-only in `$EDITOR` |
 | `ctrl+o` | Open the page in the browser |
 | `space` `space` | Find pages: fuzzy search every page's breadcrumb, like telescope's find files |
+| `f` | Mark or unmark the selected page as a favorite (★ in the tree); saved in the config with its wiki |
+| `F` | Favorite pages: the find picker limited to your favorites |
 | `space` `s` `g` | Grep pages: search every line of every page (reads all pages the first time; ignores case unless you type an upper case letter) |
 | `r` | Refresh every wiki |
 | `R` | Toggle watch: refresh the wikis and the pages you've opened every 30s (`live_reload_seconds`); the Synced line turns red while on |
@@ -132,7 +134,9 @@ Most board keys (`a`, `b`, `e`, `t`, `m`, `c`, `M`, `yp`, `yr`, `H` / `L`) work 
 | `x` | Remove the selected wiki from cmdban (its top line only; nothing changes in Azure DevOps) |
 | `q` / `esc` | Back to the board |
 
-In find and grep, type to filter; `↑`/`↓`, `ctrl+n`/`ctrl+p` or `ctrl+j`/`ctrl+k` pick a result, `ctrl+u`/`ctrl+d` scroll the preview, `enter` opens the page (a grep hit opens at the matching line, with the page revealed in the tree behind it) and `esc` closes. Page titles containing what you typed rank first.
+`f` and `F` also work while reading a page full screen.
+
+In find, favorites and grep, type to filter; `↑`/`↓`, `ctrl+n`/`ctrl+p` or `ctrl+j`/`ctrl+k` pick a result, `ctrl+u`/`ctrl+d` scroll the preview, `enter` opens the page (a grep hit opens at the matching line, with the page revealed in the tree behind it) and `esc` closes. Page titles containing what you typed rank first.
 
 Edits are guarded by the page's version: if someone changed the page after you opened it, publishing is refused and your edit is left in the temp file named in the message.
 

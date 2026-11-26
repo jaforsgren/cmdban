@@ -65,6 +65,8 @@ type KeyMap struct {
 	Undo            key.Binding
 	Redo            key.Binding
 	VisualMode      key.Binding
+	WikiFavorite    key.Binding
+	WikiFavorites   key.Binding
 }
 
 var DefaultKeyMap = KeyMap{
@@ -279,5 +281,13 @@ var DefaultKeyMap = KeyMap{
 	VisualMode: key.NewBinding(
 		key.WithKeys(visualModeKey),
 		key.WithHelp(visualModeKey, "select multiple"),
+	),
+	WikiFavorite: key.NewBinding(
+		key.WithKeys("f"),
+		key.WithHelp("f", "toggle favorite page"),
+	),
+	WikiFavorites: key.NewBinding(
+		key.WithKeys("F"),
+		key.WithHelp("F", "favorite pages"),
 	),
 }

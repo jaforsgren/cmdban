@@ -468,6 +468,32 @@ func (m Model) openWikiPageInBrowser() (tea.Model, tea.Cmd) {
 	return m.openURL(azuredevops.WikiPageWebURL(&m.config.Wikis[row.wikiIndex], row.key.path))
 }
 
+// toggleWikiFavorite marks or unmarks the selected page as a favorite and
+// saves the change, leaving the favorites as they were when saving fails.
+func (m Model) toggleWikiFavorite() (tea.Model, tea.Cmd) {
+	row, ok := m.selectedWikiPage()
+	if !ok {
+		return m, nil
+	}
+	favorite, err := m.config.ToggleWikiFavoriteAt(row.wikiIndex, row.key.path)
+	if err != nil {
+		m.message = "Error updating favorites: " + err.Error()
+		return m, nil
+	}
+	if err := m.config.Save(); err != nil {
+		m.config.ToggleWikiFavoriteAt(row.wikiIndex, row.key.path)
+		m.message = "Error saving config: " + err.Error()
+		m.logs.Error(m.message)
+		return m, nil
+	}
+	if favorite {
+		m.message = fmt.Sprintf("Added %q to favorites", row.page.Title())
+	} else {
+		m.message = fmt.Sprintf("Removed %q from favorites", row.page.Title())
+	}
+	return m, nil
+}
+
 func (m Model) startAddWiki() (tea.Model, tea.Cmd) {
 	m.wiki.returnMode = ModeWiki
 	return m.startNewTaskInput(inputActionAddWiki, wikiURLPlaceholder)
@@ -712,6 +738,12 @@ func (m Model) handleWikiPageKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
 		return model, cmd, true
 	case key.Matches(msg, m.keys.Help):
 		model, cmd := m.openHelp()
+		return model, cmd, true
+	case key.Matches(msg, m.keys.WikiFavorite):
+		model, cmd := m.toggleWikiFavorite()
+		return model, cmd, true
+	case key.Matches(msg, m.keys.WikiFavorites):
+		model, cmd := m.openWikiPicker(wikiPickerFavorites)
 		return model, cmd, true
 	case key.Matches(msg, m.keys.OpenEditor):
 		model, cmd := m.editWikiPage()

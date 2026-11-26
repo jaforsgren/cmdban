@@ -168,6 +168,12 @@ type Wiki struct {
 	Wiki    string `yaml:"wiki"`
 	PageID  int    `yaml:"page_id,omitempty"`
 	PAT     string `yaml:"pat"`
+	// Favorites are the paths of the wiki's pages marked as favorites.
+	Favorites []string `yaml:"favorites,omitempty"`
+}
+
+func (w Wiki) IsFavorite(path string) bool {
+	return slices.Contains(w.Favorites, path)
 }
 
 // SamePage reports whether both entries point at the same wiki page.
@@ -334,6 +340,21 @@ func (c *Config) RemoveWikiAt(index int) error {
 	}
 	c.Wikis = slices.Delete(c.Wikis, index, index+1)
 	return nil
+}
+
+// ToggleWikiFavoriteAt marks or unmarks the page at path of the wiki at
+// index as a favorite, reporting whether it is a favorite now.
+func (c *Config) ToggleWikiFavoriteAt(index int, path string) (bool, error) {
+	if index < 0 || index >= len(c.Wikis) {
+		return false, fmt.Errorf("%w: index %d", ErrWikiNotFound, index)
+	}
+	wiki := &c.Wikis[index]
+	if wiki.IsFavorite(path) {
+		wiki.Favorites = slices.DeleteFunc(wiki.Favorites, func(favorite string) bool { return favorite == path })
+		return false, nil
+	}
+	wiki.Favorites = append(wiki.Favorites, path)
+	return true, nil
 }
 
 // PATForOrg names the PAT to use for org: the one an ADO board in that org

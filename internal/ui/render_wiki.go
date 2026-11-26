@@ -29,9 +29,10 @@ const (
 	wikiGuideLine       = "│  "
 	wikiGuideBlank      = "   "
 	wikiBreadcrumbSep   = " › "
+	wikiFavoriteMarker  = " ★"
 
 	wikiPreviewFooterHint = "[tab: close preview  enter: read  ctrl+u/ctrl+f: scroll  ctrl+g: edit in nvim  ctrl+o: open in browser]"
-	wikiViewFooterHint    = "[q: back  j/k: scroll  ctrl+g: edit in nvim  M: markdown  ctrl+o: open in browser  r: refresh]"
+	wikiViewFooterHint    = "[q: back  j/k: scroll  ctrl+g: edit in nvim  M: markdown  ctrl+o: open in browser  f/F: favorite / favorites  r: refresh]"
 	wikiEmptyHint         = "No wikis yet — press a and paste a wiki page URL"
 	wikiEmptyPage         = "*(empty page)*"
 	wikiLoadingText       = "Loading…"
@@ -102,6 +103,9 @@ func (m Model) renderWikiRow(row wikiRow, selected bool, width int) string {
 	metaStyle := lipgloss.NewStyle().Foreground(metaColor).Background(style.GetBackground())
 
 	title, meta := m.wikiRowText(row)
+	if row.page != nil && m.config.Wikis[row.wikiIndex].IsFavorite(row.key.path) {
+		title += wikiFavoriteMarker
+	}
 	guides := metaStyle.Render(wikiGuides(row.guides))
 	line := guides + style.Inline(true).Render(m.wikiRowMarker(row)+title) + metaStyle.Render(meta)
 	return style.Width(width).Render(ansi.Truncate(line, max(width-TaskStyle.GetHorizontalPadding(), 1), "…"))

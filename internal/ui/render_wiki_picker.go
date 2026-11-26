@@ -32,8 +32,9 @@ const (
 	wikiPickerNoResults    = "no matches"
 	// wikiGrepTitleMax keeps a grep hit's page title short enough for the
 	// matching text to stay visible beside it.
-	wikiGrepTitleMax   = 24
-	wikiPickerGrepHint = "type to grep every page"
+	wikiGrepTitleMax      = 24
+	wikiPickerGrepHint    = "type to grep every page"
+	wikiPickerNoFavorites = "no favorites yet — press f on a page to add it"
 )
 
 var (
@@ -76,8 +77,8 @@ func (m Model) renderPickerBox(width, rows int, title, content string, border li
 }
 
 func (m Model) pickerCount() string {
-	if m.wiki.picker.kind == wikiPickerFindPages {
-		return fmt.Sprintf("%d / %d", len(m.wiki.picker.results), len(m.wikiPageCandidates()))
+	if m.wiki.picker.kind != wikiPickerGrep {
+		return fmt.Sprintf("%d / %d", len(m.wiki.picker.results), len(m.wikiPickerCandidates()))
 	}
 	return fmt.Sprintf("%d", len(m.wiki.picker.results))
 }
@@ -86,8 +87,11 @@ func (m Model) renderPickerResults(width, rows int) string {
 	results := m.wiki.picker.results
 	if len(results) == 0 {
 		hint := wikiPickerNoResults
-		if m.wiki.picker.kind == wikiPickerGrep && m.textInput.Value() == "" {
+		switch {
+		case m.wiki.picker.kind == wikiPickerGrep && m.textInput.Value() == "":
 			hint = wikiPickerGrepHint
+		case m.wiki.picker.kind == wikiPickerFavorites && len(m.wikiPickerCandidates()) == 0:
+			hint = wikiPickerNoFavorites
 		}
 		return wikiPickerDim.Italic(true).Render(hint)
 	}

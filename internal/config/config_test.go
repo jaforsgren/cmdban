@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -753,10 +754,37 @@ func TestWikisSurviveSaveAndLoadApartFromBoards(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	if len(loaded.Wikis) != 1 || loaded.Wikis[0] != testWiki(93) {
+	if len(loaded.Wikis) != 1 || !reflect.DeepEqual(loaded.Wikis[0], testWiki(93)) {
 		t.Fatalf("Wikis = %+v, want the saved wiki", loaded.Wikis)
 	}
 	if len(loaded.Boards) != boardCount {
 		t.Fatalf("Boards = %d, want the wiki kept out of the boards (%d)", len(loaded.Boards), boardCount)
+	}
+}
+
+func TestToggleWikiFavoriteAtMarksThenUnmarksThePage(t *testing.T) {
+	cfg := &Config{Wikis: []Wiki{testWiki(1), testWiki(2)}}
+
+	favorite, err := cfg.ToggleWikiFavoriteAt(1, "/Krav/SIE")
+	if err != nil || !favorite {
+		t.Fatalf("ToggleWikiFavoriteAt() = %v, %v; want marked", favorite, err)
+	}
+	if !cfg.Wikis[1].IsFavorite("/Krav/SIE") || cfg.Wikis[0].IsFavorite("/Krav/SIE") {
+		t.Fatalf("Wikis = %+v, want only the second wiki's page marked", cfg.Wikis)
+	}
+
+	favorite, err = cfg.ToggleWikiFavoriteAt(1, "/Krav/SIE")
+	if err != nil || favorite {
+		t.Fatalf("ToggleWikiFavoriteAt() = %v, %v; want unmarked", favorite, err)
+	}
+	if len(cfg.Wikis[1].Favorites) != 0 {
+		t.Fatalf("Favorites = %v, want none", cfg.Wikis[1].Favorites)
+	}
+}
+
+func TestToggleWikiFavoriteAtRejectsAMissingWiki(t *testing.T) {
+	cfg := &Config{Wikis: []Wiki{testWiki(1)}}
+	if _, err := cfg.ToggleWikiFavoriteAt(3, "/Krav"); !errors.Is(err, ErrWikiNotFound) {
+		t.Fatalf("ToggleWikiFavoriteAt(3) error = %v, want ErrWikiNotFound", err)
 	}
 }

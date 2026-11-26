@@ -487,14 +487,14 @@ func shortcutsForMode(mode Mode) []shortcut {
 		return []shortcut{
 			{taskNavigationKeys, "select page"}, {"l", "expand / step in"}, {"h", "collapse / step out"},
 			{"z", "expand / fold"}, {"Z", "expand / fold all beneath"}, {"enter", "read page"}, {"tab", "preview"},
-			{"space space", "find pages"}, {"space s g", "grep pages"},
+			{"space space", "find pages"}, {"space s g", "grep pages"}, {"f", "toggle favorite page"}, {"F", "favorite pages"},
 			{"ctrl+u/ctrl+f", "scroll preview"}, {"ctrl+g", "edit in nvim"}, {"M", "page as markdown"}, {"ctrl+o", "open page in browser"},
 			{"r", "refresh"}, {"R", "watch (auto refresh)"}, {"a", "add wiki"}, {"x", "remove wiki"}, {closeKey, "back to board"},
 		}
 	case ModeWikiView:
 		return []shortcut{
 			{closeKey, "back to wikis"}, {taskNavigationKeys, "scroll"}, {topBottomKeys, "top"}, {"ctrl+g", "edit in nvim"}, {"M", "page as markdown"},
-			{"ctrl+o", "open page in browser"}, {"r", "refresh"}, {"R", "watch (auto refresh)"},
+			{"ctrl+o", "open page in browser"}, {"f", "toggle favorite page"}, {"F", "favorite pages"}, {"r", "refresh"}, {"R", "watch (auto refresh)"},
 		}
 	case ModeWikiPicker:
 		return []shortcut{
