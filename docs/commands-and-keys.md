@@ -2,6 +2,16 @@
 
 Press `?` inside cmdban for the same list, grouped by view.
 
+## Status line
+
+The bottom row shows the mode and the board at a glance, followed by the latest message:
+
+```text
+ NORMAL │ 37 tasks │ 3 marked │ backend │ synced 12s ago
+```
+
+The task count reads `5 of 37` while a filter hides some, the active search shows as `/query`, and visual select adds `N selected`. In wiki mode it shows the wiki count and when the wikis last synced. Typing `/` or `:` turns the row into a one-line prompt, such as `/authentication` or `:move done`.
+
 ## Board
 
 | Key | Action |

@@ -270,7 +270,3 @@ func (m Model) bulkConfirmPrompt() string {
 	}
 	return fmt.Sprintf("Apply to %d work items in Azure DevOps: %s? (y/n)", count, bulkSummary(m.pendingBulk, count))
 }
-
-func (m Model) visualStatusLine() string {
-	return fmt.Sprintf("VISUAL  %d selected", len(m.bulkTargets()))
-}

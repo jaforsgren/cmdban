@@ -259,7 +259,7 @@ func NewModel(cfg *config.Config) Model {
 }
 
 func (m Model) Init() tea.Cmd {
-	return m.loadTasks
+	return tea.Batch(m.loadTasks, scheduleStatusClock())
 }
 
 func (m Model) loadTasks() tea.Msg {
@@ -312,6 +312,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case liveReloadTickMsg:
 		return m.handleLiveReloadTick(msg)
+
+	case statusClockMsg:
+		return m, scheduleStatusClock()
 
 	case taskSavedMsg:
 		return m, m.loadTasks
@@ -2688,11 +2691,10 @@ func (m Model) renderTask(t *task.Task, selected bool, width int, groupColor lip
 
 func (m Model) renderFooter() string {
 	if m.mode == ModeInput || m.mode == ModeCommand {
-		prefix := "> "
+		input := InputStyle.Render("> " + m.textInput.View())
 		if m.mode == ModeCommand {
-			prefix = ":"
+			input = m.renderCommandLine(commandLinePrefix)
 		}
-		input := InputStyle.Render(prefix + m.textInput.View())
 		if m.inputError == "" {
 			return input
 		}
@@ -2706,12 +2708,7 @@ func (m Model) renderFooter() string {
 	}
 
 	if m.mode == ModeSearch {
-		input := InputStyle.Render("/" + m.textInput.View())
-		return input
-	}
-
-	if m.mode == ModeVisual {
-		return StatusBarStyle.Foreground(WarningColor).Render(ansi.Truncate(m.visualStatusLine(), max(m.width-footerPaddingCols, 0), "…"))
+		return m.renderCommandLine(searchLinePrefix)
 	}
 
 	if m.mode == ModeConfirm {
@@ -2730,9 +2727,7 @@ func (m Model) renderFooter() string {
 		return DialogStyle.Render(m.deleteConfirmPrompt())
 	}
 
-	// Truncated rather than wrapped so the footer stays one row tall.
-	message := ansi.Truncate(m.message, max(m.width-footerPaddingCols, 0), "…")
-	return StatusBarStyle.Foreground(WarningColor).Render(message)
+	return m.renderStatusLine()
 }
 
 const defaultDetailFooterHint = "[q: back, j/k: scroll, ctrl+g: edit in nvim, ctrl+o: open url, ctrl+c: comments]"

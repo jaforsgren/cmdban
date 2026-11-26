@@ -206,10 +206,6 @@ func syncedLineFor(lastSync time.Time, live bool) string {
 	return topBarLine("🔄", "Synced", topBarValueStyle.Render(describeSync(lastSync)))
 }
 
-func (m Model) syncedDescription() string {
-	return describeSync(m.lastSyncTime)
-}
-
 func describeSync(lastSync time.Time) string {
 	if lastSync.IsZero() {
 		return "never"
